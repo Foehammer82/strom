@@ -8,6 +8,7 @@ Thumbs.db
 *.log
 .env
 .env.*
+PROMPTS.md
 
 # Go build and test outputs
 bin/
