@@ -15,6 +15,7 @@ import (
 const defaultScannerPath = "nut-scanner"
 
 type DetectedUPS struct {
+	Name      string
 	Driver    string
 	Port      string
 	VendorID  string

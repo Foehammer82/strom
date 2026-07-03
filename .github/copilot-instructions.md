@@ -2,6 +2,13 @@
 
 This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making non-trivial changes so the current phase, architecture, and intended repo layout stay aligned.
 
+## Copilot workflow
+
+- Workspace slash-command prompts for roadmap work live in `.github/prompts/`. When a task maps to one of those phases, prefer the matching prompt file over ad hoc phase prompts.
+- Project-specific reusable workflows live in `.github/skills/`. Use those for repeatable validation and Raspberry Pi debugging tasks instead of re-deriving the procedure each time.
+- Before starting roadmap-driven work, review the relevant checklist items in `ROADMAP.md`. As items become fully complete, update `ROADMAP.md` in the same change and check off only the items that are actually done.
+- If you change the repo's prompt or skill workflow, keep `.github/prompts/`, `.github/skills/`, `README.md`, and `ROADMAP.md` aligned. Do not reintroduce `PROMPTS.md`.
+
 ## Project defaults
 
 - Primary languages: Go for `agent/` and `controller/`; React + TypeScript only when Phase 3 frontend work begins.

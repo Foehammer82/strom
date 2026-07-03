@@ -10,6 +10,8 @@ This repository is currently in the planning and scaffolding stage.
 
 - [ROADMAP.md](ROADMAP.md) defines the architecture, phases, and exit criteria.
 - [.github/copilot-instructions.md](.github/copilot-instructions.md) captures project-specific coding guidance for Copilot sessions in this repo.
+- [.github/prompts/](.github/prompts) contains workspace slash-command prompts for each roadmap phase.
+- [.github/skills/](.github/skills) contains project-specific Copilot skills for agent validation and Pi-node debugging workflows.
 
 ## Goals
 
@@ -53,7 +55,10 @@ When implementing code in this repository:
 If you are starting work from scratch:
 
 1. Read [ROADMAP.md](ROADMAP.md) for the intended architecture and constraints.
-2. Implement only the requested phase unless a small prerequisite is needed to keep the repo buildable.
+2. Use the matching slash-command prompt from [.github/prompts/](.github/prompts) when the task lines up with a roadmap phase.
+3. Implement only the requested phase unless a small prerequisite is needed to keep the repo buildable.
+4. Update [ROADMAP.md](ROADMAP.md) in the same change when roadmap checklist items become fully complete.
+5. Use the skills in [.github/skills/](.github/skills) for recurring validation or hardware-debug workflows instead of rewriting those procedures in every session.
 
 ## License
 

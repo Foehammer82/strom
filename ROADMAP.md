@@ -13,7 +13,11 @@ everything to Home Assistant.
 ```
 wattkeeper/
 ├── ROADMAP.md
-├── PROMPTS.md                  # copilot prompts for each phase
+├── .github/
+│   ├── copilot-instructions.md # repo guidance for Copilot sessions
+│   ├── prompts/                # slash-command prompts for roadmap phases
+│   ├── skills/                 # project-specific Copilot skills
+│   └── workflows/
 ├── Makefile                    # top-level build/test/image targets
 ├── agent/                      # Go node agent (runs on the Pi)
 │   ├── cmd/agent/
@@ -39,7 +43,7 @@ wattkeeper/
 
 - [x] Init repo, Go workspace (`go.work`) covering `agent/` and `controller/`
 - [x] Top-level Makefile: `make agent`, `make image`, `make sim-up`, `make test`
-- [ ] CI stub (GitHub Actions): lint + test on push, cross-compile agent for
+- [x] CI stub (GitHub Actions): lint + test on push, cross-compile agent for
       `linux/arm64` (Zero 2 W is 64-bit capable) and `linux/arm` (fallback)
 - [x] `.editorconfig`, `gofmt`/`golangci-lint` config
 
@@ -52,12 +56,12 @@ NUT netserver with zero manual config, discoverable on the LAN.
       add/remove; debounce (UPSes enumerate noisily)
 - [x] **Scanner**: shell out to `nut-scanner -U` on boot and on hotplug events;
       parse output into structs (driver, port, vendorid, productid, serial)
-- [ ] **Config generation**: render `/etc/nut/ups.conf` from scan results.
+- [x] **Config generation**: render `/etc/nut/ups.conf` from scan results.
       Stable UPS naming: derive from serial number so names survive reboots
       and port changes. Template `nut.conf` (netserver), `upsd.conf`
       (LISTEN 0.0.0.0 3493), `upsd.users` (placeholder creds for Phase 1;
       controller-provisioned in Phase 3)
-- [ ] **Service management**: restart/reload `nut-server` and
+- [x] **Service management**: restart/reload `nut-server` and
       `nut-driver@` units only when generated config actually changed
       (hash compare)
 - [ ] **mDNS advertise**: `_wattkeeper._tcp.local` with TXT records:
@@ -65,7 +69,7 @@ NUT netserver with zero manual config, discoverable on the LAN.
 - [ ] **Agent health endpoint**: `GET /healthz` on :8080 — agent version,
       UPS list, NUT driver status, CPU temp, uptime
 - [ ] Systemd unit + udev rule files in `deploy/`
-- [ ] Unit tests: scanner output parsing, config rendering, name stability
+- [x] Unit tests: scanner output parsing, config rendering, name stability
 
 **Exit criteria**: fresh Raspberry Pi OS Lite + agent installed → plug in
 BE1050G3 → `upsc <name>@<pi-ip>` works from another machine within ~15s, and
