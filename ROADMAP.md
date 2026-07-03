@@ -64,11 +64,11 @@ NUT netserver with zero manual config, discoverable on the LAN.
 - [x] **Service management**: restart/reload `nut-server` and
       `nut-driver@` units only when generated config actually changed
       (hash compare)
-- [ ] **mDNS advertise**: `_wattkeeper._tcp.local` with TXT records:
+- [x] **mDNS advertise**: `_wattkeeper._tcp.local` with TXT records:
       `id=<pi-serial>`, `adopted=false`, `ups_count=N`, `version=X`
-- [ ] **Agent health endpoint**: `GET /healthz` on :8080 — agent version,
+- [x] **Agent health endpoint**: `GET /healthz` on :8080 — agent version,
       UPS list, NUT driver status, CPU temp, uptime
-- [ ] Systemd unit + udev rule files in `deploy/`
+- [x] Systemd unit + udev rule files in `deploy/`
 - [x] Unit tests: scanner output parsing, config rendering, name stability
 
 **Exit criteria**: fresh Raspberry Pi OS Lite + agent installed → plug in

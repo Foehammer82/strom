@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Foehammer82/wattkeeper/agent/internal/api"
+	"github.com/Foehammer82/wattkeeper/agent/internal/discovery"
 	"github.com/Foehammer82/wattkeeper/agent/internal/hotplug"
 	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
 	"github.com/Foehammer82/wattkeeper/agent/internal/services"
@@ -25,6 +29,8 @@ const (
 	defaultAgentConfigPath = "/etc/wattkeeper/agent.yaml"
 	defaultNamesPath       = "/var/lib/wattkeeper/names.json"
 )
+
+var version = "dev"
 
 type config struct {
 	configDir string
@@ -44,10 +50,20 @@ type reloader interface {
 	Reload(context.Context, bool, []string) error
 }
 
+type inventoryUpdater interface {
+	UpdateInventory([]nutconf.DetectedUPS)
+}
+
+type upsCountUpdater interface {
+	UpdateUPSCount(int)
+}
+
 type agentRuntime struct {
 	watcher         hotplugWatcher
 	scanner         scanner
 	reloader        reloader
+	inventory       inventoryUpdater
+	upsCount        upsCountUpdater
 	logger          *log.Logger
 	configDir       string
 	agentConfigPath string
@@ -96,7 +112,76 @@ func parseFlags() config {
 }
 
 func run(ctx context.Context, logger *log.Logger, cfg config) error {
-	return newAgentRuntime(cfg, logger).run(ctx)
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	identity, err := discovery.ResolveIdentity()
+	if err != nil {
+		return fmt.Errorf("resolve node identity: %w", err)
+	}
+
+	listener, err := net.Listen("tcp", cfg.listen)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.listen, err)
+	}
+
+	healthAPI := api.New(logger, api.Options{
+		Version:   version,
+		Serial:    identity.Serial,
+		StartedAt: time.Now(),
+	})
+	httpServer := &http.Server{Handler: healthAPI.Handler()}
+	httpErr := make(chan error, 1)
+	go func() {
+		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			httpErr <- err
+		}
+	}()
+
+	advertiser := discovery.NewAdvertiser(logger, discovery.Metadata{
+		Serial:   identity.Serial,
+		Instance: identity.Instance,
+		Version:  version,
+		Port:     listener.Addr().(*net.TCPAddr).Port,
+	})
+	if err := advertiser.Start(); err != nil {
+		_ = listener.Close()
+		return err
+	}
+	defer advertiser.Close()
+
+	runtime := newAgentRuntime(cfg, logger)
+	runtime.inventory = healthAPI
+	runtime.upsCount = advertiser
+
+	logger.Printf("node identity serial=%s instance=%s", identity.Serial, identity.Instance)
+
+	runtimeErr := make(chan error, 1)
+	go func() {
+		runtimeErr <- runtime.run(runCtx)
+	}()
+
+	var result error
+	select {
+	case err := <-runtimeErr:
+		result = err
+	case err := <-httpErr:
+		cancel()
+		result = fmt.Errorf("serve http: %w", err)
+		<-runtimeErr
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if result == nil {
+			result = fmt.Errorf("shutdown http server: %w", err)
+		} else {
+			logger.Printf("http shutdown failed: %v", err)
+		}
+	}
+
+	return result
 }
 
 func newAgentRuntime(cfg config, logger *log.Logger) *agentRuntime {
@@ -144,6 +229,12 @@ func (r *agentRuntime) run(ctx context.Context) error {
 			}
 
 			logScanDiff(r.logger, previous, applied.devices, event)
+			if r.inventory != nil {
+				r.inventory.UpdateInventory(applied.devices)
+			}
+			if r.upsCount != nil {
+				r.upsCount.UpdateUPSCount(len(applied.devices))
+			}
 			if err := r.reloader.Reload(ctx, applied.changed, applied.restartUPSName); err != nil {
 				r.logger.Printf("service reload failed synthetic=%t: %v", event.Synthetic, err)
 			}

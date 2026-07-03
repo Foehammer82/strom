@@ -60,6 +60,57 @@ If you are starting work from scratch:
 4. Update [ROADMAP.md](ROADMAP.md) in the same change when roadmap checklist items become fully complete.
 5. Use the skills in [.github/skills/](.github/skills) for recurring validation or hardware-debug workflows instead of rewriting those procedures in every session.
 
+## Releases Today
+
+This repository does not produce a flashable image yet. Phase 2 image work is still pending, and `make image` is not implemented.
+
+What it does produce today is versioned agent release artifacts:
+
+1. Create and push a tag such as `v0.1.0`.
+2. GitHub Actions runs `.github/workflows/release.yml`.
+3. The workflow runs tests, builds the agent for `linux/arm64` and `linux/armv6`, packages each archive with the install assets from `deploy/`, and publishes them to the GitHub Release for that tag.
+
+You can build the same release payload locally with:
+
+```sh
+make release-agent VERSION=v0.1.0
+```
+
+## Contributing
+
+Contributors should prefer feature branches and pull requests over pushing directly to `main`.
+
+### CI Behavior
+
+- Pushes to branches and pull requests run `.github/workflows/ci.yml`.
+- CI runs lint, tests, and a cross-build of the agent binaries.
+- The CI workflow uses concurrency cancellation, so newer pushes to the same branch or PR cancel older in-progress runs.
+- Build artifacts uploaded from CI are temporary and currently retained for 7 days.
+
+### Releases
+
+- Only tags matching `v*` run `.github/workflows/release.yml`.
+- Plain version tags such as `v0.2.0` publish a normal GitHub Release.
+- Tags containing a hyphen such as `v0.2.0-rc1` publish a prerelease.
+- Releases currently ship packaged agent artifacts, not a flashable Raspberry Pi image.
+
+### Limits And Cost Considerations
+
+- This repository's current workflows are lightweight and are unlikely to hit GitHub-hosted runner limits under normal branch and PR development.
+- That said, GitHub Actions usage is not unlimited on every plan. Private repositories can consume metered Actions minutes and storage.
+- CI artifact storage is controlled by short retention, but GitHub Releases are persistent and will accumulate over time.
+- Frequent branch pushes are generally fine, especially with concurrency enabled, but frequent release tags create permanent release assets and should be used more deliberately.
+- The first work likely to change the cost profile is Phase 2 image building, since full Raspberry Pi image builds are materially heavier than the current Go binary packaging.
+
+### Recommended Workflow
+
+1. Do normal development in branches.
+2. Open pull requests so CI validates lint, tests, and cross-builds.
+3. Merge to `main` only after CI is green.
+4. Create release tags only for versions you actually want published.
+
+Working this way should keep routine development well below any realistic limits for the current pipeline, while avoiding unnecessary permanent release artifacts.
+
 ## License
 
 This project is licensed under the terms in [LICENSE](LICENSE).

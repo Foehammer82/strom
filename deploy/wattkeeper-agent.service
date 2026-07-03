@@ -1,0 +1,13 @@
+[Unit]
+Description=Wattkeeper node agent
+After=network-online.target nut-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wattkeeper-agent --config-dir /etc/nut --listen :8080
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

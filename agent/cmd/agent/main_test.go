@@ -33,11 +33,15 @@ func TestRuntimeLoopWritesConfigsAndSkipsReloadWhenUnchanged(t *testing.T) {
 	events <- hotplug.Event{Synthetic: false, Time: time.Now()}
 
 	runner := &scriptedRunner{}
+	inventorySink := &fakeInventorySink{}
+	countSink := &fakeUPSCountSink{}
 	loggerOutput := &bytes.Buffer{}
 	runtime := &agentRuntime{
 		watcher:         fakeWatcher{events: events},
 		scanner:         &fakeScanner{cancel: cancel, results: [][]nutconf.DetectedUPS{{sampleUPS()}, {sampleUPS()}}},
 		reloader:        &services.Manager{Logger: newTestLogger(loggerOutput), Runner: runner},
+		inventory:       inventorySink,
+		upsCount:        countSink,
 		logger:          newTestLogger(loggerOutput),
 		configDir:       configDir,
 		agentConfigPath: agentConfigPath,
@@ -88,6 +92,12 @@ func TestRuntimeLoopWritesConfigsAndSkipsReloadWhenUnchanged(t *testing.T) {
 	}
 	if strings.Count(loggerOutput.String(), "received shutdown signal") != 1 {
 		t.Fatalf("expected shutdown log, got %q", loggerOutput.String())
+	}
+	if got := inventorySink.count(); got != 2 {
+		t.Fatalf("inventory updates = %d, want 2", got)
+	}
+	if got := countSink.counts(); len(got) != 2 || got[0] != 1 || got[1] != 1 {
+		t.Fatalf("UPS count updates = %v, want [1 1]", got)
 	}
 }
 
@@ -161,4 +171,32 @@ func assertFileContains(t *testing.T, path, substring string) {
 	if !strings.Contains(string(content), substring) {
 		t.Fatalf("file %s missing %q in %q", path, substring, string(content))
 	}
+}
+
+type fakeInventorySink struct {
+	updates [][]nutconf.DetectedUPS
+}
+
+func (f *fakeInventorySink) UpdateInventory(devices []nutconf.DetectedUPS) {
+	cloned := make([]nutconf.DetectedUPS, len(devices))
+	copy(cloned, devices)
+	f.updates = append(f.updates, cloned)
+}
+
+func (f *fakeInventorySink) count() int {
+	return len(f.updates)
+}
+
+type fakeUPSCountSink struct {
+	values []int
+}
+
+func (f *fakeUPSCountSink) UpdateUPSCount(count int) {
+	f.values = append(f.values, count)
+}
+
+func (f *fakeUPSCountSink) counts() []int {
+	values := make([]int, len(f.values))
+	copy(values, f.values)
+	return values
 }

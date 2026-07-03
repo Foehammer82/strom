@@ -1,0 +1,2 @@
+# Start the agent when USB topology changes; the agent debounces and filters devices via nut-scanner.
+ACTION=="add|remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", TAG+="systemd", ENV{SYSTEMD_WANTS}+="wattkeeper-agent.service"
