@@ -1,0 +1,39 @@
+# Wattkeeper Copilot Instructions
+
+This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making non-trivial changes so the current phase, architecture, and intended repo layout stay aligned.
+
+## Project defaults
+
+- Primary languages: Go for `agent/` and `controller/`; React + TypeScript only when Phase 3 frontend work begins.
+- Target runtime for the agent: Go 1.22+ on Raspberry Pi OS Lite (Debian bookworm), especially Pi Zero 2 W (`linux/arm64`, with `linux/arm` fallback where the roadmap calls for it).
+- Prefer the Go standard library unless an external dependency clearly reduces risk or complexity. If adding a dependency, keep it small and justify it in code comments, docs, or the PR summary.
+- Keep generated configs, install assets, systemd units, udev rules, and image/deployment artifacts in `deploy/` or under the phase-specific rendering/output path described in `ROADMAP.md`.
+
+## Architecture and scope
+
+- Treat this as a phased build. Implement only the requested phase unless a small prerequisite is required to keep the code buildable or testable.
+- Preserve the monorepo structure from `ROADMAP.md`: shared top-level build/test automation, with separate Go modules in `agent/` and `controller/` coordinated by `go.work`.
+- The agent is the hardware-facing node process. The controller is the central discovery/adoption/metrics service. Do not blur those responsibilities.
+- Favor simple, explicit designs over framework-heavy abstractions. This project is intended to be operable on small devices and easy to debug remotely.
+
+## Implementation guidance
+
+- Keep Linux and Debian bookworm behavior in mind for any service management, file paths, systemd integration, or NUT interactions.
+- Avoid cgo unless the roadmap explicitly justifies it. Pure Go solutions are preferred, especially for agent-side hardware/event handling.
+- Use stable, deterministic rendering for generated text files so config diffs are predictable and easy to test.
+- When implementing parsers or text renderers, write table-driven tests with realistic fixtures. This is required for scanner parsing, config generation, protocol parsing, and similar text-heavy behavior.
+- For hardware-dependent code, isolate shelling out, filesystem access, clocks, and service control behind small interfaces when practical so tests can fake them.
+- When a feature interacts with NUT, udev, mDNS, SQLite, MQTT, or TLS, follow the roadmap's explicit constraints before inventing new behavior.
+
+## Build and verification
+
+- Keep `make test` and the relevant build target working after each change.
+- Prefer focused unit tests first, then repo-level verification using the top-level `Makefile` targets when available.
+- For Go code, keep APIs small, use clear package boundaries under `internal/`, and avoid speculative abstractions for later phases.
+- For frontend work introduced in later phases, preserve a minimal dependency footprint and keep the UI directly aligned with the controller API and roadmap milestones.
+
+## What to avoid
+
+- Do not add cloud-only assumptions, desktop-only dependencies, or workflows that conflict with Raspberry Pi deployment.
+- Do not bake secrets, Wi-Fi credentials, or controller-provisioned credentials into source-controlled files, images, or generated artifacts.
+- Do not implement stretch goals or future-phase behavior unless the current task explicitly asks for it.
