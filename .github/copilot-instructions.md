@@ -12,7 +12,7 @@ This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making no
 ## Project defaults
 
 - Primary languages: Go for `agent/` and `controller/`; React + TypeScript only when Phase 3 frontend work begins.
-- Target runtime for the agent: Go 1.22+ on Raspberry Pi OS Lite (Debian bookworm), especially Pi Zero 2 W (`linux/arm64`, with `linux/arm` fallback where the roadmap calls for it).
+- Target runtime for the agent: Go 1.26+ on Raspberry Pi OS Lite (Debian bookworm), especially Pi Zero 2 W (`linux/arm64`, with `linux/arm` fallback where the roadmap calls for it).
 - Prefer the Go standard library unless an external dependency clearly reduces risk or complexity. If adding a dependency, keep it small and justify it in code comments, docs, or the PR summary.
 - Keep generated configs, install assets, systemd units, udev rules, and image/deployment artifacts in `deploy/` or under the phase-specific rendering/output path described in `ROADMAP.md`.
 

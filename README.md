@@ -46,7 +46,7 @@ Work is intended to follow the roadmap phase by phase rather than building the f
 When implementing code in this repository:
 
 - Prefer Go standard library solutions unless a dependency is clearly justified
-- Target Go 1.22+ and Raspberry Pi OS Lite (Debian bookworm) for the agent
+- Target Go 1.26+ and Raspberry Pi OS Lite (Debian bookworm) for the agent
 - Keep generated configs and service artifacts deterministic and testable
 - Write table-driven tests for anything that parses or renders text
 
