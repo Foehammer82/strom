@@ -8,6 +8,8 @@ This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making no
 - Project-specific reusable workflows live in `.github/skills/`. Use those for repeatable validation and Raspberry Pi debugging tasks instead of re-deriving the procedure each time.
 - Before starting roadmap-driven work, review the relevant checklist items in `ROADMAP.md`. As items become fully complete, update `ROADMAP.md` in the same change and check off only the items that are actually done.
 - If you change the repo's prompt or skill workflow, keep `.github/prompts/`, `.github/skills/`, `README.md`, and `ROADMAP.md` aligned. Do not reintroduce `PROMPTS.md`.
+- Keep versioning and release automation aligned with the current GitHub Actions tag pattern: stable releases use `vMAJOR.MINOR.PATCH`, prereleases use `vMAJOR.MINOR.PATCH-QUALIFIER` such as `v0.1.0-rc1` or `v0.1.0-beta1`.
+- Preserve the release workflow conventions documented in `README.md`: prefer annotated tags, use `-rcN` tags to validate prereleases, and never reuse or force-move an existing release tag.
 
 ## Project defaults
 
@@ -36,6 +38,8 @@ This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making no
 
 - Keep `make test` and the relevant build target working after each change.
 - Prefer focused unit tests first, then repo-level verification using the top-level `Makefile` targets when available.
+- When release automation or packaging changes, preserve the current version injection and tag-driven workflow behavior in the `Makefile` and `.github/workflows/` files unless the task explicitly changes the release strategy.
+- When asked to help with releases, default to the safe sequence: verify the target commit is merged and green, cut an annotated `-rcN` tag first when validating automation, then cut a stable SemVer tag only after the prerelease result is acceptable.
 - For Go code, keep APIs small, use clear package boundaries under `internal/`, and avoid speculative abstractions for later phases.
 - For frontend work introduced in later phases, preserve a minimal dependency footprint and keep the UI directly aligned with the controller API and roadmap milestones.
 
@@ -43,4 +47,5 @@ This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making no
 
 - Do not add cloud-only assumptions, desktop-only dependencies, or workflows that conflict with Raspberry Pi deployment.
 - Do not bake secrets, Wi-Fi credentials, or controller-provisioned credentials into source-controlled files, images, or generated artifacts.
+- Do not silently change the versioning pattern, release tag rules, or prerelease semantics without updating the workflows and the release guidance in `README.md`.
 - Do not implement stretch goals or future-phase behavior unless the current task explicitly asks for it.

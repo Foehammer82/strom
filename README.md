@@ -66,7 +66,7 @@ This repository does not produce a flashable image yet. Phase 2 image work is st
 
 What it does produce today is versioned agent release artifacts:
 
-1. Create and push a tag such as `v0.1.0`.
+1. Create and push a SemVer-style tag such as `v0.1.0` for a normal release or `v0.1.0-rc1` for a prerelease.
 2. GitHub Actions runs `.github/workflows/release.yml`.
 3. The workflow runs tests, builds the agent for `linux/arm64` and `linux/armv6`, packages each archive with the install assets from `deploy/`, and publishes them to the GitHub Release for that tag.
 
@@ -75,6 +75,22 @@ You can build the same release payload locally with:
 ```sh
 make release-agent VERSION=v0.1.0
 ```
+
+### Release Versioning Policy
+
+- Stable releases use `vMAJOR.MINOR.PATCH`, for example `v0.2.0`.
+- Release candidates use `vMAJOR.MINOR.PATCH-rcN`, for example `v0.2.0-rc1`.
+- Other prereleases may use `vMAJOR.MINOR.PATCH-QUALIFIERN`, for example `v0.2.0-beta1`.
+- Any tag containing a hyphen is published by GitHub Actions as a prerelease.
+- Do not reuse or move an existing release tag. If a prerelease needs another cut, increment the qualifier, for example `rc1` to `rc2`.
+
+### Safe Release Checklist
+
+1. Land changes through a branch and pull request.
+2. Wait for CI to pass on the merge commit you intend to release.
+3. Create an annotated tag from that commit.
+4. Use an `-rcN` tag first when validating packaging or release behavior.
+5. Promote to a stable `vMAJOR.MINOR.PATCH` tag only after the prerelease artifacts and smoke checks look correct.
 
 ## Contributing
 
@@ -90,8 +106,11 @@ Contributors should prefer feature branches and pull requests over pushing direc
 ### Releases
 
 - Only tags matching `v*` run `.github/workflows/release.yml`.
-- Plain version tags such as `v0.2.0` publish a normal GitHub Release.
-- Tags containing a hyphen such as `v0.2.0-rc1` publish a prerelease.
+- Stable releases should use `vMAJOR.MINOR.PATCH`, for example `v0.2.0`.
+- Prereleases should use `vMAJOR.MINOR.PATCH-QUALIFIER`, for example `v0.2.0-rc1` or `v0.2.0-beta1`.
+- Tags containing a hyphen publish a prerelease automatically.
+- Release candidates should prefer the `-rcN` pattern and advance monotonically: `rc1`, `rc2`, `rc3`, and so on.
+- Do not retag an existing version. Cut a new prerelease or patch version instead.
 - Releases currently ship packaged agent artifacts, not a flashable Raspberry Pi image.
 
 ### Limits And Cost Considerations
@@ -107,7 +126,8 @@ Contributors should prefer feature branches and pull requests over pushing direc
 1. Do normal development in branches.
 2. Open pull requests so CI validates lint, tests, and cross-builds.
 3. Merge to `main` only after CI is green.
-4. Create release tags only for versions you actually want published.
+4. Create annotated release tags only for versions you actually want published.
+5. Use `-rcN` tags to validate release automation before cutting a stable tag.
 
 Working this way should keep routine development well below any realistic limits for the current pipeline, while avoiding unnecessary permanent release artifacts.
 
