@@ -206,10 +206,243 @@ func TestIndexRendersHTMLDashboard(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
 	}
 	body := recorder.Body.String()
-	for _, want := range []string{"Wattkeeper Node", "JSON status", "Detailed JSON", "ups-a", "usbhid-ups", "OL"} {
+	for _, want := range []string{"Wattkeeper Node", "Refresh now", "/assets/app.js", "/assets/styles.css", "ups-a", "usbhid-ups", "OL"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
+	}
+}
+
+func TestAPIUPSDetailReturnsMetricsVariablesAndCommands(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	service := New(nil, Options{
+		Version:     "2.0.0",
+		Serial:      "serial-1",
+		StartedAt:   time.Now().Add(-30 * time.Second),
+		RootPath:    tempDir,
+		DisableAuth: true,
+		Runner: fakeRunner{outputs: map[string]commandResult{
+			"upsc -j ups-a": {
+				output: []byte(`{"ups.status":"OL","battery.charge":"97","battery.runtime":"1870","input.voltage":"120.5","output.voltage":"120.1","ups.load":"22"}`),
+			},
+			"upscmd -l ups-a": {
+				output: []byte("beeper.toggle - Toggle beeper\nshutdown.return - Shutdown and restore on utility return\n"),
+			},
+		}},
+	})
+	service.UpdateInventory([]nutconf.DetectedUPS{{Name: "ups-a", Driver: "usbhid-ups"}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ups/ups-a", nil)
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response upsDetailResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Name != "ups-a" || response.Driver != "usbhid-ups" || response.Status != "OL" {
+		t.Fatalf("detail = %#v, want ups-a/usbhid-ups/OL", response)
+	}
+	if response.Metrics.BatteryChargePercent == nil || *response.Metrics.BatteryChargePercent != 97 {
+		t.Fatalf("battery charge = %v, want 97", response.Metrics.BatteryChargePercent)
+	}
+	if got := response.Variables["input.voltage"]; got != "120.5" {
+		t.Fatalf("input.voltage = %q, want %q", got, "120.5")
+	}
+	if len(response.Commands) != 2 || response.Commands[1].Name != "shutdown.return" || !response.Commands[1].Destructive {
+		t.Fatalf("commands = %#v, want destructive shutdown.return", response.Commands)
+	}
+}
+
+func TestAPIUPSCommandExecutesSupportedCommand(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	service := New(nil, Options{
+		StartedAt:   time.Now().Add(-30 * time.Second),
+		RootPath:    tempDir,
+		DisableAuth: true,
+		NUTUser:     "agent",
+		NUTPassword: "secret",
+		Runner: fakeRunner{outputs: map[string]commandResult{
+			"upscmd -l ups-a": {
+				output: []byte("test.battery.start.quick - Start a quick self test\n"),
+			},
+			"upscmd -u agent -p secret -w ups-a test.battery.start.quick": {
+				output: []byte("OK\n"),
+			},
+		}},
+	})
+	service.UpdateInventory([]nutconf.DetectedUPS{{Name: "ups-a", Driver: "usbhid-ups"}})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ups/ups-a/command", strings.NewReader(`{"cmd":"test.battery.start.quick"}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response upsCommandResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.UPS != "ups-a" || response.Command != "test.battery.start.quick" || response.Output != "OK" {
+		t.Fatalf("command response = %#v, want ups-a/test.battery.start.quick/OK", response)
+	}
+}
+
+func TestAPIUPSDetailReturnsWritableVariables(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	service := New(nil, Options{
+		StartedAt:   time.Now().Add(-30 * time.Second),
+		RootPath:    tempDir,
+		DisableAuth: true,
+		Runner: fakeRunner{outputs: map[string]commandResult{
+			"upsc -j ups-a": {
+				output: []byte(`{"ups.status":"OL","input.transfer.high":"136","ups.beeper.status":"enabled"}`),
+			},
+			"upscmd -l ups-a": {output: []byte("")},
+			"upsrw -l ups-a": {
+				output: []byte("input.transfer.high: High transfer voltage\nType: RANGE\nRange: 127..144\nValue: 136\n\nups.beeper.status: Audible alarm\nType: ENUM\nOption: enabled\nOption: disabled\nValue: enabled\n"),
+			},
+		}},
+	})
+	service.UpdateInventory([]nutconf.DetectedUPS{{Name: "ups-a", Driver: "usbhid-ups"}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ups/ups-a", nil)
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response upsDetailResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Writable) != 2 {
+		t.Fatalf("writable = %#v, want 2 entries", response.Writable)
+	}
+	if response.Writable[0].Name != "input.transfer.high" || response.Writable[0].Editor != "number" {
+		t.Fatalf("first writable = %#v, want input.transfer.high number editor", response.Writable[0])
+	}
+	if response.Writable[1].Name != "ups.beeper.status" || response.Writable[1].Editor != "select" || len(response.Writable[1].Options) != 2 {
+		t.Fatalf("second writable = %#v, want select options", response.Writable[1])
+	}
+}
+
+func TestAPIUPSSetVarExecutesSupportedVariable(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	service := New(nil, Options{
+		StartedAt:   time.Now().Add(-30 * time.Second),
+		RootPath:    tempDir,
+		DisableAuth: true,
+		NUTUser:     "agent",
+		NUTPassword: "secret",
+		Runner: fakeRunner{outputs: map[string]commandResult{
+			"upsc -j ups-a": {
+				output: []byte(`{"ups.status":"OL","input.transfer.high":"136"}`),
+			},
+			"upsrw -l ups-a": {
+				output: []byte("input.transfer.high: High transfer voltage\nType: RANGE\nRange: 127..144\nValue: 136\n"),
+			},
+			"upsrw -s input.transfer.high=140 -u agent -p secret -w ups-a": {
+				output: []byte("OK\n"),
+			},
+		}},
+	})
+	service.UpdateInventory([]nutconf.DetectedUPS{{Name: "ups-a", Driver: "usbhid-ups"}})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ups/ups-a/setvar", strings.NewReader(`{"var":"input.transfer.high","value":"140"}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response upsSetVarResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Variable != "input.transfer.high" || response.Value != "140" || response.Output != "OK" {
+		t.Fatalf("setvar response = %#v, want input.transfer.high/140/OK", response)
+	}
+}
+
+func TestAdoptAppliesProvisioningAndReturnsMetadata(t *testing.T) {
+	t.Parallel()
+
+	service := New(nil, Options{
+		Serial:      "serial-1234",
+		Version:     "v0.3.0",
+		RootPath:    t.TempDir(),
+		DisableAuth: true,
+		Adopter:     fakeAdopter{response: adoptResponse{Serial: "serial-1234", Version: "v0.3.0", ControllerURL: "https://controller.local", TokenSHA256: tokenSHA256Hex("token")}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/adopt", strings.NewReader(`{"ca_pem":"pem","nut_user":"controller","nut_password":"secret","api_token":"token","controller_url":"https://controller.local"}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response adoptResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Serial != "serial-1234" || response.ControllerURL != "https://controller.local" || response.TokenSHA256 != tokenSHA256Hex("token") {
+		t.Fatalf("adopt response = %#v, want serial/controller/token hash", response)
+	}
+}
+
+func TestAdoptedBearerTokenCanRunUPSCommandWithoutSession(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	adoptionPath := filepath.Join(tempDir, "adoption.json")
+	if err := os.WriteFile(adoptionPath, []byte(`{"token_sha256":"`+tokenSHA256Hex("controller-token")+`"}`), 0o600); err != nil {
+		t.Fatalf("write adoption config: %v", err)
+	}
+	service := New(nil, Options{
+		StartedAt:    time.Now().Add(-30 * time.Second),
+		RootPath:     tempDir,
+		AdoptionPath: adoptionPath,
+		AuthPath:     filepath.Join(tempDir, "webui-auth.json"),
+		NUTUser:      "controller",
+		NUTPassword:  "secret",
+		Runner: fakeRunner{outputs: map[string]commandResult{
+			"upscmd -l ups-a": {output: []byte("beeper.toggle - Toggle beeper\n")},
+			"upscmd -u controller -p secret -w ups-a beeper.toggle": {output: []byte("OK\n")},
+		}},
+	})
+	service.UpdateInventory([]nutconf.DetectedUPS{{Name: "ups-a", Driver: "usbhid-ups"}})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ups/ups-a/command", strings.NewReader(`{"cmd":"beeper.toggle"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer controller-token")
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 }
 
@@ -492,6 +725,15 @@ type fakeRunner struct {
 type commandResult struct {
 	output []byte
 	err    error
+}
+
+type fakeAdopter struct {
+	response adoptResponse
+	err      error
+}
+
+func (f fakeAdopter) ApplyAdoption(_ context.Context, _ adoptRequest) (adoptResponse, error) {
+	return f.response, f.err
 }
 
 func (f fakeRunner) CombinedOutput(_ context.Context, path string, args ...string) ([]byte, error) {

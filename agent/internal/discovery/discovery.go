@@ -112,6 +112,23 @@ func (a *Advertiser) UpdateUPSCount(count int) {
 	}
 }
 
+func (a *Advertiser) UpdateAdopted(adopted bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.meta.Adopted == adopted {
+		return
+	}
+	a.meta.Adopted = adopted
+	if !a.started || a.server == nil {
+		return
+	}
+	a.server.SetText(txtRecords(a.meta, a.upsCount))
+	if a.logger != nil {
+		a.logger.Printf("mDNS advertisement updated instance=%s adopted=%t", a.meta.Instance, a.meta.Adopted)
+	}
+}
+
 func (a *Advertiser) Close() {
 	a.mu.Lock()
 	defer a.mu.Unlock()

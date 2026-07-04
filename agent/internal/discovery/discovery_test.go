@@ -69,17 +69,19 @@ func TestAdvertiserUpdatesTXTOnlyWhenCountChanges(t *testing.T) {
 
 	advertiser.UpdateUPSCount(2)
 	advertiser.UpdateUPSCount(2)
+	advertiser.UpdateAdopted(true)
 	advertiser.UpdateUPSCount(3)
 	advertiser.Close()
 
-	if len(announcement.texts) != 3 {
-		t.Fatalf("TXT updates = %d, want 3", len(announcement.texts))
+	if len(announcement.texts) != 4 {
+		t.Fatalf("TXT updates = %d, want 4", len(announcement.texts))
 	}
 
 	want := [][]string{
 		{"id=serial1234", "adopted=false", "ups_count=0", "version=1.2.3"},
 		{"id=serial1234", "adopted=false", "ups_count=2", "version=1.2.3"},
-		{"id=serial1234", "adopted=false", "ups_count=3", "version=1.2.3"},
+		{"id=serial1234", "adopted=true", "ups_count=2", "version=1.2.3"},
+		{"id=serial1234", "adopted=true", "ups_count=3", "version=1.2.3"},
 	}
 	if !reflect.DeepEqual(announcement.texts, want) {
 		t.Fatalf("TXT records = %#v, want %#v", announcement.texts, want)

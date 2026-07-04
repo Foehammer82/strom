@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -39,27 +42,43 @@ func (execRunner) CombinedOutput(ctx context.Context, path string, args ...strin
 }
 
 type Options struct {
-	Version     string
-	Serial      string
-	StartedAt   time.Time
-	Runner      commandRunner
-	UPSCPath    string
-	CPUTempPath string
-	RootPath    string
-	DisableAuth bool
-	AuthPath    string
+	Version      string
+	Serial       string
+	StartedAt    time.Time
+	Runner       commandRunner
+	UPSCPath     string
+	UPSCmdPath   string
+	UPSRWPath    string
+	CPUTempPath  string
+	RootPath     string
+	AdoptionPath string
+	DisableAuth  bool
+	AuthPath     string
+	NUTUser      string
+	NUTPassword  string
+	Adopter      adoptionHandler
+}
+
+type adoptionHandler interface {
+	ApplyAdoption(context.Context, adoptRequest) (adoptResponse, error)
 }
 
 type Service struct {
-	logger      *log.Logger
-	version     string
-	serial      string
-	startedAt   time.Time
-	runner      commandRunner
-	upscPath    string
-	cpuTempPath string
-	rootPath    string
-	auth        *authManager
+	logger       *log.Logger
+	version      string
+	serial       string
+	startedAt    time.Time
+	runner       commandRunner
+	upscPath     string
+	upscmdPath   string
+	upsrwPath    string
+	cpuTempPath  string
+	rootPath     string
+	adoptionPath string
+	nutUser      string
+	nutPassword  string
+	auth         *authManager
+	adopter      adoptionHandler
 
 	mu      sync.RWMutex
 	devices []nutconf.DetectedUPS
@@ -81,10 +100,85 @@ type statusResponse struct {
 }
 
 type upsHealth struct {
-	Name   string `json:"name"`
-	Driver string `json:"driver"`
-	Status string `json:"status"`
+	Name                 string   `json:"name"`
+	Driver               string   `json:"driver"`
+	Status               string   `json:"status"`
+	BatteryChargePercent *float64 `json:"battery_charge_percent,omitempty"`
+	LoadPercent          *float64 `json:"load_percent,omitempty"`
+	RuntimeSeconds       *int64   `json:"runtime_seconds,omitempty"`
+	InputVoltage         *float64 `json:"input_voltage,omitempty"`
+	OutputVoltage        *float64 `json:"output_voltage,omitempty"`
+	BatteryVoltage       *float64 `json:"battery_voltage,omitempty"`
 }
+
+type upsCommand struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Destructive bool   `json:"destructive"`
+}
+
+type upsDetailResponse struct {
+	Name      string            `json:"name"`
+	Driver    string            `json:"driver"`
+	Status    string            `json:"status"`
+	Metrics   upsHealth         `json:"metrics"`
+	Variables map[string]string `json:"variables"`
+	Commands  []upsCommand      `json:"commands"`
+	Writable  []upsWritableVar  `json:"writable"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+type upsWritableVar struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description,omitempty"`
+	Editor       string   `json:"editor"`
+	CurrentValue string   `json:"current_value,omitempty"`
+	Options      []string `json:"options,omitempty"`
+	Min          *float64 `json:"min,omitempty"`
+	Max          *float64 `json:"max,omitempty"`
+}
+
+type upsCommandRequest struct {
+	Command string `json:"cmd"`
+}
+
+type upsCommandResponse struct {
+	UPS     string `json:"ups"`
+	Command string `json:"command"`
+	Output  string `json:"output"`
+}
+
+type upsSetVarRequest struct {
+	Variable string `json:"var"`
+	Value    string `json:"value"`
+}
+
+type upsSetVarResponse struct {
+	UPS      string `json:"ups"`
+	Variable string `json:"variable"`
+	Value    string `json:"value"`
+	Output   string `json:"output"`
+}
+
+type adoptRequest struct {
+	CAPEM         string `json:"ca_pem"`
+	NUTUser       string `json:"nut_user"`
+	NUTPassword   string `json:"nut_password"`
+	APIToken      string `json:"api_token"`
+	ControllerURL string `json:"controller_url"`
+}
+
+type adoptResponse struct {
+	Serial         string `json:"serial"`
+	Version        string `json:"version"`
+	ControllerURL  string `json:"controller_url"`
+	TLSPort        int    `json:"tls_port"`
+	TLSFingerprint string `json:"tls_fingerprint"`
+	TokenSHA256    string `json:"token_sha256"`
+}
+
+type AdoptRequest = adoptRequest
+type AdoptResponse = adoptResponse
 
 type indexViewModel struct {
 	GeneratedAt time.Time
@@ -92,195 +186,137 @@ type indexViewModel struct {
 	AuthEnabled bool
 }
 
+type storedAdoption struct {
+	TokenSHA256 string `json:"token_sha256"`
+}
+
+//go:embed web/*
+var webAssets embed.FS
+
+var assetFS = mustSubFS(webAssets, "web")
+
+func mustSubFS(source fs.FS, dir string) fs.FS {
+	subtree, err := fs.Sub(source, dir)
+	if err != nil {
+		panic(err)
+	}
+	return subtree
+}
+
 var indexTemplate = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta http-equiv="refresh" content="15">
 	<title>Wattkeeper Node</title>
-	<style>
-		:root {
-			color-scheme: light;
-			--bg: #f4efe7;
-			--panel: #fffaf2;
-			--ink: #1f2933;
-			--muted: #5f6c7b;
-			--line: #d7c8b3;
-			--accent: #0f766e;
-			--good: #166534;
-			--warn: #b45309;
-		}
-		* { box-sizing: border-box; }
-		body {
-			margin: 0;
-			font-family: "Segoe UI", Tahoma, sans-serif;
-			color: var(--ink);
-			background: linear-gradient(180deg, #efe7da 0%, var(--bg) 55%, #efe9df 100%);
-		}
-		main {
-			max-width: 980px;
-			margin: 0 auto;
-			padding: 32px 20px 40px;
-		}
-		header {
-			margin-bottom: 24px;
-		}
-		h1 {
-			margin: 0 0 8px;
-			font-size: clamp(2rem, 4vw, 3.2rem);
-			line-height: 1;
-		}
-		p {
-			margin: 0;
-			color: var(--muted);
-		}
-		.grid {
-			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-			gap: 12px;
-			margin-bottom: 20px;
-		}
-		.card {
-			background: rgba(255, 250, 242, 0.9);
-			border: 1px solid var(--line);
-			border-radius: 16px;
-			padding: 16px;
-			box-shadow: 0 10px 25px rgba(31, 41, 51, 0.06);
-		}
-		.label {
-			display: block;
-			margin-bottom: 6px;
-			font-size: 0.78rem;
-			letter-spacing: 0.08em;
-			text-transform: uppercase;
-			color: var(--muted);
-		}
-		.value {
-			font-size: 1.35rem;
-			font-weight: 600;
-		}
-		.section-title {
-			margin: 24px 0 12px;
-			font-size: 1.15rem;
-		}
-		table {
-			width: 100%;
-			border-collapse: collapse;
-			background: rgba(255, 250, 242, 0.9);
-			border: 1px solid var(--line);
-			border-radius: 16px;
-			overflow: hidden;
-			box-shadow: 0 10px 25px rgba(31, 41, 51, 0.06);
-		}
-		th, td {
-			padding: 14px 16px;
-			text-align: left;
-			border-bottom: 1px solid var(--line);
-		}
-		th {
-			font-size: 0.78rem;
-			letter-spacing: 0.08em;
-			text-transform: uppercase;
-			color: var(--muted);
-		}
-		tr:last-child td { border-bottom: 0; }
-		.status {
-			font-weight: 600;
-			color: var(--good);
-		}
-		.status-warn {
-			color: var(--warn);
-		}
-		.links {
-			margin-top: 16px;
-			font-size: 0.95rem;
-		}
-		.links a {
-			color: var(--accent);
-			text-decoration: none;
-			margin-right: 12px;
-		}
-		.empty {
-			padding: 18px 16px;
-			background: rgba(255, 250, 242, 0.9);
-			border: 1px dashed var(--line);
-			border-radius: 16px;
-			color: var(--muted);
-		}
-	</style>
+	<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+	<link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
-	<main>
-		<header>
-			<h1>Wattkeeper Node</h1>
-			<p>Local node dashboard for NUT-backed UPS monitoring. Refreshes every 15 seconds.</p>
+	<main class="shell">
+		<header class="topbar">
+			<div class="brand">
+				<img class="brand-mark" src="/assets/logo.svg" alt="Wattkeeper logo">
+				<div class="brand-copy">
+					<h1>Wattkeeper Node</h1>
+					<p>Material-inspired local node dashboard for NUT-backed UPS monitoring and control.</p>
+				</div>
+			</div>
+			<nav class="toolbar" aria-label="Dashboard actions">
+				<button id="theme-toggle" class="button button--ghost" type="button">Dark mode</button>
+				<a class="link-button" href="/settings">Settings</a>
+				{{if .AuthEnabled}}<a class="link-button" href="/auth/logout">Sign out</a>{{end}}
+			</nav>
 		</header>
 
-		<section class="grid">
-			<article class="card">
-				<span class="label">Version</span>
-				<span class="value">{{.Health.Version}}</span>
-			</article>
-			<article class="card">
-				<span class="label">Serial</span>
-				<span class="value">{{if .Health.Serial}}{{.Health.Serial}}{{else}}unknown{{end}}</span>
-			</article>
-			<article class="card">
-				<span class="label">Uptime</span>
-				<span class="value">{{.Health.UptimeSeconds}}s</span>
-			</article>
-			<article class="card">
-				<span class="label">Disk Free</span>
-				<span class="value">{{.Health.DiskFreeBytes}} B</span>
-			</article>
-			<article class="card">
-				<span class="label">CPU Temp</span>
-				<span class="value">{{if .Health.CPUTemperatureCelsius}}{{printf "%.1f C" .Health.CPUTemperatureCelsius}}{{else}}unavailable{{end}}</span>
-			</article>
-			<article class="card">
-				<span class="label">UPS Count</span>
-				<span class="value">{{len .Health.UPSes}}</span>
-			</article>
+		<section class="surface hero">
+			<div class="hero-grid">
+				<div>
+					<div class="section-head">
+						<h2>Node overview</h2>
+						<span class="helper">Live metrics, polling status, and per-UPS controls.</span>
+					</div>
+					<div id="metrics-grid" class="summary-grid">
+						<article class="metric-card"><span class="eyebrow">Version</span><div class="metric-value">{{.Health.Version}}</div></article>
+						<article class="metric-card"><span class="eyebrow">Serial</span><div class="metric-value">{{if .Health.Serial}}{{.Health.Serial}}{{else}}unknown{{end}}</div></article>
+						<article class="metric-card"><span class="eyebrow">Uptime</span><div class="metric-value">{{.Health.UptimeSeconds}}s</div></article>
+						<article class="metric-card"><span class="eyebrow">Disk free</span><div class="metric-value">{{.Health.DiskFreeBytes}} B</div></article>
+						<article class="metric-card"><span class="eyebrow">CPU temp</span><div class="metric-value">{{if .Health.CPUTemperatureCelsius}}{{printf "%.1f C" .Health.CPUTemperatureCelsius}}{{else}}unavailable{{end}}</div></article>
+						<article class="metric-card"><span class="eyebrow">UPS count</span><div class="metric-value">{{len .Health.UPSes}}</div></article>
+					</div>
+				</div>
+				<aside class="refresh-panel metric-card">
+					<div class="refresh-hero">
+						<svg class="ring" viewBox="0 0 88 88" aria-hidden="true">
+							<circle class="ring-track" cx="44" cy="44" r="34"></circle>
+							<circle id="refresh-ring" class="ring-progress" cx="44" cy="44" r="34"></circle>
+						</svg>
+						<div class="refresh-copy">
+							<span class="eyebrow">Refresh timer</span>
+							<strong id="refresh-seconds">15s</strong>
+							<p id="refresh-status">Polling node health and UPS telemetry every 15 seconds.</p>
+						</div>
+					</div>
+					<div class="toolbar">
+						<button id="refresh-now" class="button button--primary" type="button">Refresh now</button>
+						<button id="refresh-toggle" class="button button--ghost" type="button">Pause auto refresh</button>
+					</div>
+				</aside>
+			</div>
 		</section>
 
-		<h2 class="section-title">UPS Inventory</h2>
-		{{if .Health.UPSes}}
-		<table>
-			<thead>
-				<tr>
-					<th>Name</th>
-					<th>Driver</th>
-					<th>Status</th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Health.UPSes}}
-				<tr>
-					<td>{{.Name}}</td>
-					<td>{{.Driver}}</td>
-					<td class="status {{if or (eq .Status "starting") (eq .Status "unknown")}}status-warn{{end}}">{{.Status}}</td>
-				</tr>
-				{{end}}
-			</tbody>
-		</table>
-		{{else}}
-		<div class="empty">No UPS devices are currently discovered on this node.</div>
-		{{end}}
-
-		<div class="links">
-			<a href="/status">JSON status</a>
-			<a href="/status/details">Detailed JSON</a>
-			<a href="/healthz">Health payload</a>
-			{{if .AuthEnabled}}<a href="/settings">Settings</a>{{end}}
-		</div>
-		{{if .AuthEnabled}}
-		<form method="post" action="/auth/logout" class="links">
-			<button type="submit" style="border:0;background:none;color:var(--accent);padding:0;font:inherit;cursor:pointer;">Sign out</button>
-		</form>
-		{{end}}
-		<p class="links">Last rendered: {{.GeneratedAt.Format "2006-01-02 15:04:05 MST"}}</p>
+		<section class="layout">
+			<div class="stack">
+				<section class="surface hero">
+					<div class="section-head">
+						<h2>UPS inventory</h2>
+						<span class="helper">Select any UPS to inspect telemetry and available NUT controls.</span>
+					</div>
+					<div id="ups-grid" class="ups-grid">
+						{{if .Health.UPSes}}
+							{{range .Health.UPSes}}
+							<article class="ups-card">
+								<header>
+									<div>
+										<h3>{{.Name}}</h3>
+										<p>{{.Driver}}</p>
+									</div>
+									<span class="chip {{if or (eq .Status "starting") (eq .Status "unknown")}}chip--warn{{end}}">{{.Status}}</span>
+								</header>
+							</article>
+							{{end}}
+						{{else}}
+							<div class="empty-state"><p>No UPS devices are currently discovered on this node.</p></div>
+						{{end}}
+					</div>
+				</section>
+			</div>
+			<aside class="surface detail-shell" id="ups-detail">
+				<div class="empty-state">
+					<h3>Select a UPS</h3>
+					<p>Pick a UPS card to inspect full telemetry, raw variables, and supported commands.</p>
+				</div>
+			</aside>
+		</section>
 	</main>
+
+	<div id="toast" class="toast" role="status" aria-live="polite"></div>
+	<div id="confirm-modal" class="modal" aria-hidden="true">
+		<div class="surface modal-card">
+			<span class="eyebrow">Destructive command</span>
+			<h2>Confirm UPS action</h2>
+			<p id="confirm-text" class="helper"></p>
+			<label class="field" for="confirm-input">
+				<span>Type the command exactly to continue</span>
+				<input id="confirm-input" type="text" autocomplete="off">
+			</label>
+			<div class="modal-actions">
+				<button id="confirm-cancel" class="button button--ghost" type="button">Cancel</button>
+				<button id="confirm-submit" class="button button--primary" type="button" disabled>Run command</button>
+			</div>
+		</div>
+	</div>
+	<script src="/assets/app.js" defer></script>
 </body>
 </html>`))
 
@@ -300,6 +336,16 @@ func New(logger *log.Logger, opts Options) *Service {
 		upscPath = defaultUPSCPath
 	}
 
+	upscmdPath := opts.UPSCmdPath
+	if upscmdPath == "" {
+		upscmdPath = "upscmd"
+	}
+
+	upsrwPath := opts.UPSRWPath
+	if upsrwPath == "" {
+		upsrwPath = "upsrw"
+	}
+
 	cpuTempPath := opts.CPUTempPath
 	if cpuTempPath == "" {
 		cpuTempPath = defaultCPUTempPath
@@ -311,15 +357,21 @@ func New(logger *log.Logger, opts Options) *Service {
 	}
 
 	service := &Service{
-		logger:      logger,
-		version:     defaultString(opts.Version, "dev"),
-		serial:      opts.Serial,
-		startedAt:   startedAt,
-		runner:      runner,
-		upscPath:    upscPath,
-		cpuTempPath: cpuTempPath,
-		rootPath:    rootPath,
-		auth:        newAuthManager(opts.DisableAuth, opts.AuthPath),
+		logger:       logger,
+		version:      defaultString(opts.Version, "dev"),
+		serial:       opts.Serial,
+		startedAt:    startedAt,
+		runner:       runner,
+		upscPath:     upscPath,
+		upscmdPath:   upscmdPath,
+		upsrwPath:    upsrwPath,
+		cpuTempPath:  cpuTempPath,
+		rootPath:     rootPath,
+		adoptionPath: opts.AdoptionPath,
+		nutUser:      opts.NUTUser,
+		nutPassword:  opts.NUTPassword,
+		auth:         newAuthManager(opts.DisableAuth, opts.AuthPath),
+		adopter:      opts.Adopter,
 	}
 	service.cache = service.loggingMiddleware(service.routes())
 	return service
@@ -341,13 +393,25 @@ func (s *Service) UpdateInventory(devices []nutconf.DetectedUPS) {
 	s.mu.Unlock()
 }
 
+func (s *Service) UpdateNUTCredentials(username, password string) {
+	s.mu.Lock()
+	s.nutUser = username
+	s.nutPassword = password
+	s.mu.Unlock()
+}
+
 func (s *Service) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetFS))))
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/adopt", s.handleAdopt)
 	mux.HandleFunc("/auth/bootstrap", s.handleBootstrap)
 	mux.HandleFunc("/auth/login", s.handleLogin)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 	mux.HandleFunc("/auth/reset", s.handleReset)
+	mux.HandleFunc("/api/health", s.handleAPIHealth)
+	mux.HandleFunc("/api/ups", s.handleAPIUPS)
+	mux.HandleFunc("/api/ups/", s.handleAPIUPS)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/ui", s.handleUISetting)
 	mux.HandleFunc("/status", s.handleStatus)
@@ -452,6 +516,40 @@ func (s *Service) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
+}
+
+func (s *Service) handleAdopt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.adopter == nil {
+		writeJSONError(w, http.StatusNotImplemented, "adoption unavailable")
+		return
+	}
+
+	var request adoptRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode adopt request: %v", err))
+		return
+	}
+	if err := validateAdoptRequest(request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	response, err := s.adopter.ApplyAdoption(r.Context(), request)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errNodeAlreadyAdopted) {
+			status = http.StatusConflict
+		}
+		writeJSONError(w, status, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -642,6 +740,138 @@ func (s *Service) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	s.handleStatusDetails(w, r)
 }
 
+func (s *Service) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.requireControllerOrSession(w, r) {
+		return
+	}
+
+	response, err := s.buildHealthResponse(r.Context())
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/ups")
+	if path == "" || path == "/" {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if _, ok := s.requireSession(w, r); !ok {
+			return
+		}
+		writeJSON(w, http.StatusOK, s.buildUPSStatuses(r.Context()))
+		return
+	}
+
+	trimmed := strings.TrimPrefix(path, "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	name := parts[0]
+	switch {
+	case len(parts) == 1:
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if _, ok := s.requireSession(w, r); !ok {
+			return
+		}
+		response, err := s.buildUPSDetailResponse(r.Context(), name)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, errUPSNotFound) {
+				status = http.StatusNotFound
+			}
+			writeJSONError(w, status, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	case len(parts) == 2 && parts[1] == "command":
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !s.requireControllerOrSession(w, r) {
+			return
+		}
+		var request upsCommandRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode command request: %v", err))
+			return
+		}
+		request.Command = strings.TrimSpace(request.Command)
+		if request.Command == "" {
+			writeJSONError(w, http.StatusBadRequest, "cmd is required")
+			return
+		}
+		response, err := s.runUPSCommand(r.Context(), name, request.Command)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, errUPSNotFound):
+				status = http.StatusNotFound
+			case errors.Is(err, errUPSCommandNotFound), errors.Is(err, errUPSControlUnavailable):
+				status = http.StatusBadRequest
+			}
+			writeJSONError(w, status, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	case len(parts) == 2 && parts[1] == "setvar":
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !s.requireControllerOrSession(w, r) {
+			return
+		}
+		var request upsSetVarRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode setvar request: %v", err))
+			return
+		}
+		request.Variable = strings.TrimSpace(request.Variable)
+		request.Value = strings.TrimSpace(request.Value)
+		if request.Variable == "" {
+			writeJSONError(w, http.StatusBadRequest, "var is required")
+			return
+		}
+		response, err := s.runUPSSetVariable(r.Context(), name, request.Variable, request.Value)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, errUPSNotFound):
+				status = http.StatusNotFound
+			case errors.Is(err, errUPSVariableNotFound), errors.Is(err, errUPSControlUnavailable):
+				status = http.StatusBadRequest
+			}
+			writeJSONError(w, status, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (s *Service) renderBootstrapPage(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
@@ -694,6 +924,58 @@ func (s *Service) requireSession(w http.ResponseWriter, r *http.Request) (string
 		return "", false
 	}
 	return username, true
+}
+
+func (s *Service) requireControllerOrSession(w http.ResponseWriter, r *http.Request) bool {
+	if !s.auth.Enabled() {
+		return true
+	}
+	matched, err := s.controllerTokenMatches(r)
+	if err == nil && matched {
+		return true
+	}
+	if err != nil && s.logger != nil {
+		s.logger.Printf("controller bearer auth unavailable: %v", err)
+	}
+	_, ok := s.requireSession(w, r)
+	return ok
+}
+
+func (s *Service) controllerTokenMatches(r *http.Request) (bool, error) {
+	if s.adoptionPath == "" || r == nil {
+		return false, nil
+	}
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
+		return false, nil
+	}
+	token := strings.TrimSpace(authorization[len("Bearer "):])
+	if token == "" {
+		return false, nil
+	}
+	adoption, err := s.loadAdoption()
+	if err != nil {
+		return false, err
+	}
+	if adoption == nil || adoption.TokenSHA256 == "" {
+		return false, nil
+	}
+	return adoption.TokenSHA256 == tokenSHA256Hex(token), nil
+}
+
+func (s *Service) loadAdoption() (*storedAdoption, error) {
+	content, err := os.ReadFile(s.adoptionPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read adoption config: %w", err)
+	}
+	var adoption storedAdoption
+	if err := json.Unmarshal(content, &adoption); err != nil {
+		return nil, fmt.Errorf("decode adoption config: %w", err)
+	}
+	return &adoption, nil
 }
 
 func (s *Service) startSession(w http.ResponseWriter, username string) error {
@@ -751,24 +1033,57 @@ func (s *Service) buildUPSStatuses(ctx context.Context) []upsHealth {
 	devices := s.inventory()
 	upses := make([]upsHealth, 0, len(devices))
 	for _, device := range devices {
-		status := unknownStatus
-		upsStatus, err := s.queryUPSStatus(ctx, device.Name)
+		snapshot, err := s.queryUPSSnapshot(ctx, device.Name)
 		if err != nil {
 			if s.logger != nil {
 				s.logger.Printf("health upsc failed ups=%s: %v", device.Name, err)
 			}
-		} else {
-			status = upsStatus
 		}
 
-		upses = append(upses, upsHealth{
-			Name:   device.Name,
-			Driver: device.Driver,
-			Status: status,
-		})
+		upses = append(upses, buildUPSHealth(device, snapshot))
 	}
 
 	return upses
+}
+
+func (s *Service) buildUPSDetailResponse(ctx context.Context, name string) (upsDetailResponse, error) {
+	device, ok := s.lookupUPS(name)
+	if !ok {
+		return upsDetailResponse{}, fmt.Errorf("%w: %s", errUPSNotFound, name)
+	}
+
+	snapshot, err := s.queryUPSSnapshot(ctx, name)
+	if err != nil {
+		return upsDetailResponse{}, err
+	}
+
+	commands, err := s.listUPSCommands(ctx, name)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf("list upscmd failed ups=%s: %v", name, err)
+		}
+		commands = nil
+	}
+
+	writable, err := s.listUPSWritableVars(ctx, name, snapshot.Variables)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf("list upsrw failed ups=%s: %v", name, err)
+		}
+		writable = nil
+	}
+
+	metrics := buildUPSHealth(device, snapshot)
+	return upsDetailResponse{
+		Name:      device.Name,
+		Driver:    device.Driver,
+		Status:    metrics.Status,
+		Metrics:   metrics,
+		Variables: snapshot.Variables,
+		Commands:  commands,
+		Writable:  writable,
+		UpdatedAt: time.Now(),
+	}, nil
 }
 
 func summarizeStatus(upses []upsHealth) string {
@@ -785,19 +1100,177 @@ func summarizeStatus(upses []upsHealth) string {
 	return "ok"
 }
 
+var (
+	errNodeAlreadyAdopted    = errors.New("node already adopted")
+	errUPSNotFound           = errors.New("ups not found")
+	errUPSCommandNotFound    = errors.New("ups command not supported")
+	errUPSVariableNotFound   = errors.New("ups variable not supported")
+	errUPSControlUnavailable = errors.New("ups control credentials unavailable")
+)
+
+var ErrNodeAlreadyAdopted = errNodeAlreadyAdopted
+
+func validateAdoptRequest(req adoptRequest) error {
+	if strings.TrimSpace(req.CAPEM) == "" {
+		return errors.New("ca_pem is required")
+	}
+	if strings.TrimSpace(req.NUTUser) == "" {
+		return errors.New("nut_user is required")
+	}
+	if strings.TrimSpace(req.NUTPassword) == "" {
+		return errors.New("nut_password is required")
+	}
+	if strings.TrimSpace(req.APIToken) == "" {
+		return errors.New("api_token is required")
+	}
+	if strings.TrimSpace(req.ControllerURL) == "" {
+		return errors.New("controller_url is required")
+	}
+	return nil
+}
+
+type upsSnapshot struct {
+	Status    string
+	Variables map[string]string
+}
+
 func (s *Service) queryUPSStatus(ctx context.Context, name string) (string, error) {
+	snapshot, err := s.queryUPSSnapshot(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return snapshot.Status, nil
+}
+
+func (s *Service) queryUPSSnapshot(ctx context.Context, name string) (upsSnapshot, error) {
+	jsonOutput, jsonErr := s.runner.CombinedOutput(ctx, s.upscPath, "-j", name)
+	if jsonErr == nil {
+		variables, err := parseUPSVariablesJSON(jsonOutput)
+		if err == nil {
+			return buildUPSSnapshot(variables)
+		}
+		if s.logger != nil {
+			s.logger.Printf("parse upsc json failed ups=%s: %v", name, err)
+		}
+	}
+
 	output, err := s.runner.CombinedOutput(ctx, s.upscPath, name)
-	status, parseErr := parseUPSStatus(output)
+	variables, parseErr := parseUPSVariablesText(output)
 	if parseErr == nil {
-		return status, nil
+		snapshot, snapshotErr := buildUPSSnapshot(variables)
+		if snapshotErr == nil {
+			return snapshot, nil
+		}
+		if err != nil && isDriverStarting(output, err) {
+			return upsSnapshot{Status: startingStatus}, nil
+		}
+		return upsSnapshot{}, snapshotErr
 	}
 	if err != nil && isDriverStarting(output, err) {
-		return startingStatus, nil
+		return upsSnapshot{Status: startingStatus}, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("run %s %s: %w: %s", s.upscPath, name, err, strings.TrimSpace(string(output)))
+		return upsSnapshot{}, fmt.Errorf("run %s %s: %w: %s", s.upscPath, name, err, strings.TrimSpace(string(output)))
 	}
-	return "", parseErr
+	return upsSnapshot{}, parseErr
+}
+
+func buildUPSSnapshot(variables map[string]string) (upsSnapshot, error) {
+	status := strings.TrimSpace(variables["ups.status"])
+	if status == "" {
+		return upsSnapshot{}, fmt.Errorf("ups.status not found")
+	}
+	return upsSnapshot{Status: status, Variables: variables}, nil
+}
+
+func (s *Service) listUPSCommands(ctx context.Context, name string) ([]upsCommand, error) {
+	output, err := s.runner.CombinedOutput(ctx, s.upscmdPath, "-l", name)
+	if err != nil {
+		return nil, fmt.Errorf("run %s -l %s: %w: %s", s.upscmdPath, name, err, strings.TrimSpace(string(output)))
+	}
+	return parseUPSCommands(output), nil
+}
+
+func (s *Service) listUPSWritableVars(ctx context.Context, name string, snapshot map[string]string) ([]upsWritableVar, error) {
+	output, err := s.runner.CombinedOutput(ctx, s.upsrwPath, "-l", name)
+	if err != nil {
+		return nil, fmt.Errorf("run %s -l %s: %w: %s", s.upsrwPath, name, err, strings.TrimSpace(string(output)))
+	}
+	return parseUPSWritableVars(output, snapshot), nil
+}
+
+func (s *Service) runUPSCommand(ctx context.Context, name, command string) (upsCommandResponse, error) {
+	if _, ok := s.lookupUPS(name); !ok {
+		return upsCommandResponse{}, fmt.Errorf("%w: %s", errUPSNotFound, name)
+	}
+	if strings.TrimSpace(s.currentNUTUser()) == "" || strings.TrimSpace(s.currentNUTPassword()) == "" {
+		return upsCommandResponse{}, errUPSControlUnavailable
+	}
+
+	commands, err := s.listUPSCommands(ctx, name)
+	if err == nil {
+		found := false
+		for _, candidate := range commands {
+			if candidate.Name == command {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return upsCommandResponse{}, fmt.Errorf("%w: %s", errUPSCommandNotFound, command)
+		}
+	}
+
+	output, err := s.runner.CombinedOutput(ctx, s.upscmdPath, "-u", s.currentNUTUser(), "-p", s.currentNUTPassword(), "-w", name, command)
+	if err != nil {
+		return upsCommandResponse{}, fmt.Errorf("run %s %s %s: %w: %s", s.upscmdPath, name, command, err, strings.TrimSpace(string(output)))
+	}
+
+	return upsCommandResponse{
+		UPS:     name,
+		Command: command,
+		Output:  strings.TrimSpace(string(output)),
+	}, nil
+}
+
+func (s *Service) runUPSSetVariable(ctx context.Context, name, variable, value string) (upsSetVarResponse, error) {
+	if _, ok := s.lookupUPS(name); !ok {
+		return upsSetVarResponse{}, fmt.Errorf("%w: %s", errUPSNotFound, name)
+	}
+	if strings.TrimSpace(s.currentNUTUser()) == "" || strings.TrimSpace(s.currentNUTPassword()) == "" {
+		return upsSetVarResponse{}, errUPSControlUnavailable
+	}
+
+	snapshot, err := s.queryUPSSnapshot(ctx, name)
+	if err != nil {
+		return upsSetVarResponse{}, err
+	}
+	writable, err := s.listUPSWritableVars(ctx, name, snapshot.Variables)
+	if err == nil {
+		found := false
+		for _, candidate := range writable {
+			if candidate.Name == variable {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return upsSetVarResponse{}, fmt.Errorf("%w: %s", errUPSVariableNotFound, variable)
+		}
+	}
+
+	assignment := variable + "=" + value
+	output, err := s.runner.CombinedOutput(ctx, s.upsrwPath, "-s", assignment, "-u", s.currentNUTUser(), "-p", s.currentNUTPassword(), "-w", name)
+	if err != nil {
+		return upsSetVarResponse{}, fmt.Errorf("run %s %s %s: %w: %s", s.upsrwPath, name, assignment, err, strings.TrimSpace(string(output)))
+	}
+
+	return upsSetVarResponse{
+		UPS:      name,
+		Variable: variable,
+		Value:    value,
+		Output:   strings.TrimSpace(string(output)),
+	}, nil
 }
 
 func (s *Service) inventory() []nutconf.DetectedUPS {
@@ -807,6 +1280,27 @@ func (s *Service) inventory() []nutconf.DetectedUPS {
 	devices := make([]nutconf.DetectedUPS, len(s.devices))
 	copy(devices, s.devices)
 	return devices
+}
+
+func (s *Service) lookupUPS(name string) (nutconf.DetectedUPS, bool) {
+	for _, device := range s.inventory() {
+		if device.Name == name {
+			return device, true
+		}
+	}
+	return nutconf.DetectedUPS{}, false
+}
+
+func (s *Service) currentNUTUser() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.nutUser
+}
+
+func (s *Service) currentNUTPassword() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.nutPassword
 }
 
 func (s *Service) loggingMiddleware(next http.Handler) http.Handler {
@@ -844,6 +1338,31 @@ func diskFreeBytes(path string) (uint64, error) {
 }
 
 func parseUPSStatus(output []byte) (string, error) {
+	variables, err := parseUPSVariablesText(output)
+	if err != nil {
+		return "", err
+	}
+	status := strings.TrimSpace(variables["ups.status"])
+	if status == "" {
+		return "", fmt.Errorf("ups.status not found")
+	}
+	return status, nil
+}
+
+func parseUPSVariablesJSON(output []byte) (map[string]string, error) {
+	var raw map[string]any
+	if err := json.Unmarshal(output, &raw); err != nil {
+		return nil, fmt.Errorf("decode upsc json: %w", err)
+	}
+	variables := make(map[string]string, len(raw))
+	for key, value := range raw {
+		variables[key] = fmt.Sprint(value)
+	}
+	return variables, nil
+}
+
+func parseUPSVariablesText(output []byte) (map[string]string, error) {
+	variables := make(map[string]string)
 	for _, line := range strings.Split(string(output), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
@@ -858,18 +1377,232 @@ func parseUPSStatus(output []byte) (string, error) {
 			continue
 		}
 
-		if strings.TrimSpace(key) != "ups.status" {
+		variables[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	if len(variables) == 0 {
+		return nil, fmt.Errorf("ups variables not found")
+	}
+	return variables, nil
+}
+
+func parseUPSCommands(output []byte) []upsCommand {
+	commands := make([]upsCommand, 0)
+	for _, line := range strings.Split(string(output), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
 			continue
 		}
 
-		status := strings.TrimSpace(value)
-		if status == "" {
-			break
+		name := trimmed
+		description := ""
+		if head, tail, ok := strings.Cut(trimmed, " - "); ok {
+			name = strings.TrimSpace(head)
+			description = strings.TrimSpace(tail)
+		} else if head, tail, ok := strings.Cut(trimmed, ":"); ok {
+			name = strings.TrimSpace(head)
+			description = strings.TrimSpace(tail)
 		}
-		return status, nil
+
+		commands = append(commands, upsCommand{
+			Name:        name,
+			Description: description,
+			Destructive: isDestructiveUPSCommand(name),
+		})
+	}
+	return commands
+}
+
+func parseUPSWritableVars(output []byte, snapshot map[string]string) []upsWritableVar {
+	lines := strings.Split(string(output), "\n")
+	blocks := make([][]string, 0)
+	current := make([]string, 0)
+	for _, raw := range lines {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			if len(current) > 0 {
+				blocks = append(blocks, current)
+				current = nil
+			}
+			continue
+		}
+		current = append(current, trimmed)
+	}
+	if len(current) > 0 {
+		blocks = append(blocks, current)
 	}
 
-	return "", fmt.Errorf("ups.status not found")
+	vars := make([]upsWritableVar, 0, len(blocks))
+	seen := map[string]struct{}{}
+	for _, block := range blocks {
+		variable, ok := parseUPSWritableBlock(block, snapshot)
+		if !ok || variable.Name == "" {
+			continue
+		}
+		if _, exists := seen[variable.Name]; exists {
+			continue
+		}
+		seen[variable.Name] = struct{}{}
+		vars = append(vars, variable)
+	}
+	return vars
+}
+
+func parseUPSWritableBlock(block []string, snapshot map[string]string) (upsWritableVar, bool) {
+	var variable upsWritableVar
+	variable.Editor = "text"
+
+	name, description := parseWritableHeader(block[0])
+	if name == "" {
+		return upsWritableVar{}, false
+	}
+	variable.Name = name
+	variable.Description = description
+	variable.CurrentValue = snapshot[name]
+
+	for _, line := range block[1:] {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = strings.TrimSpace(value)
+		switch {
+		case strings.Contains(key, "value") && variable.CurrentValue == "":
+			variable.CurrentValue = value
+		case strings.Contains(key, "desc") && variable.Description == "":
+			variable.Description = value
+		case strings.Contains(key, "option") || strings.Contains(key, "enum") || strings.Contains(key, "possible"):
+			variable.Options = append(variable.Options, value)
+		case strings.Contains(key, "range"):
+			min, max := parseNumericRange(value)
+			if min != nil {
+				variable.Min = min
+			}
+			if max != nil {
+				variable.Max = max
+			}
+		case strings.Contains(key, "type"):
+			typeValue := strings.ToLower(value)
+			if strings.Contains(typeValue, "enum") {
+				variable.Editor = "select"
+			}
+			if strings.Contains(typeValue, "range") || strings.Contains(typeValue, "number") || strings.Contains(typeValue, "integer") {
+				variable.Editor = "number"
+			}
+		}
+	}
+
+	if len(variable.Options) > 0 {
+		variable.Editor = "select"
+	}
+	if variable.Min != nil || variable.Max != nil {
+		variable.Editor = "number"
+	}
+	return variable, true
+}
+
+func parseWritableHeader(line string) (string, string) {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		return strings.Trim(trimmed, "[]"), ""
+	}
+	if head, tail, ok := strings.Cut(trimmed, ":"); ok {
+		name := strings.TrimSpace(head)
+		if strings.Contains(name, ".") || strings.Contains(name, "_") {
+			return name, strings.TrimSpace(tail)
+		}
+	}
+	fields := strings.Fields(trimmed)
+	if len(fields) > 0 && (strings.Contains(fields[0], ".") || strings.Contains(fields[0], "_")) {
+		return fields[0], strings.TrimSpace(strings.TrimPrefix(trimmed, fields[0]))
+	}
+	return "", ""
+}
+
+func parseNumericRange(value string) (*float64, *float64) {
+	replacer := strings.NewReplacer("to", "-", "..", "-", "—", "-", "–", "-", ",", " ")
+	parts := strings.Fields(replacer.Replace(strings.ToLower(value)))
+	if len(parts) == 1 {
+		pieces := strings.Split(parts[0], "-")
+		if len(pieces) == 2 {
+			parts = pieces
+		}
+	}
+	if len(parts) < 2 {
+		return nil, nil
+	}
+	min, errMin := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	max, errMax := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if errMin != nil || errMax != nil {
+		return nil, nil
+	}
+	return &min, &max
+}
+
+func buildUPSHealth(device nutconf.DetectedUPS, snapshot upsSnapshot) upsHealth {
+	metrics := upsHealth{
+		Name:   device.Name,
+		Driver: device.Driver,
+		Status: snapshot.Status,
+	}
+	if metrics.Status == "" {
+		metrics.Status = unknownStatus
+	}
+	if len(snapshot.Variables) == 0 {
+		return metrics
+	}
+	metrics.BatteryChargePercent = parseUPSFloat(snapshot.Variables, "battery.charge")
+	metrics.LoadPercent = parseUPSFloat(snapshot.Variables, "ups.load")
+	metrics.BatteryVoltage = parseUPSFloat(snapshot.Variables, "battery.voltage")
+	metrics.InputVoltage = parseUPSFloat(snapshot.Variables, "input.voltage")
+	metrics.OutputVoltage = parseUPSFloat(snapshot.Variables, "output.voltage")
+	metrics.RuntimeSeconds = parseUPSInt(snapshot.Variables, "battery.runtime")
+	return metrics
+}
+
+func parseUPSFloat(variables map[string]string, key string) *float64 {
+	value := strings.TrimSpace(variables[key])
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+func parseUPSInt(variables map[string]string, key string) *int64 {
+	value := strings.TrimSpace(variables[key])
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return nil
+	}
+	rounded := int64(parsed)
+	return &rounded
+}
+
+func isDestructiveUPSCommand(name string) bool {
+	return strings.HasPrefix(name, "shutdown.") ||
+		strings.HasPrefix(name, "load.off") ||
+		name == "driver.killpower" ||
+		name == "shutdown.return" ||
+		name == "shutdown.stayoff" ||
+		name == "shutdown.reboot" ||
+		name == "shutdown.reboot.graceful" ||
+		name == "FSD"
+}
+
+func tokenSHA256Hex(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func TokenSHA256Hex(value string) string {
+	return tokenSHA256Hex(value)
 }
 
 func isDriverStarting(output []byte, err error) bool {

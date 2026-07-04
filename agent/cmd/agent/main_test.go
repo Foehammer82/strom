@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Foehammer82/wattkeeper/agent/internal/api"
 	"github.com/Foehammer82/wattkeeper/agent/internal/hotplug"
 	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
 	"github.com/Foehammer82/wattkeeper/agent/internal/services"
@@ -101,6 +103,78 @@ func TestRuntimeLoopWritesConfigsAndSkipsReloadWhenUnchanged(t *testing.T) {
 	}
 }
 
+func TestRuntimeAdopterWritesStateAndReloadsServices(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	adoptionPath := filepath.Join(t.TempDir(), "adoption.json")
+	runner := &scriptedRunner{}
+	inventory := &fakeInventorySink{}
+	adopted := &fakeAdoptedSink{}
+	adopter := &runtimeAdopter{
+		configDir:    configDir,
+		adoptionPath: adoptionPath,
+		reloader:     &services.Manager{Runner: runner},
+		inventory:    inventory,
+		advertiser:   adopted,
+		version:      "v0.3.0",
+		serial:       "serial-1234",
+		tlsPort:      8443,
+		tlsCertPath:  filepath.Join(t.TempDir(), "node-api.crt"),
+		tlsKeyPath:   filepath.Join(t.TempDir(), "node-api.key"),
+	}
+
+	response, err := adopter.ApplyAdoption(context.Background(), api.AdoptRequest{
+		CAPEM:         "pem-data",
+		NUTUser:       "controller",
+		NUTPassword:   "secret",
+		APIToken:      "token-123",
+		ControllerURL: "https://controller.local",
+	})
+	if err != nil {
+		t.Fatalf("ApplyAdoption() error = %v", err)
+	}
+	if response.Serial != "serial-1234" || response.Version != "v0.3.0" {
+		t.Fatalf("response = %#v, want serial/version", response)
+	}
+	if response.TLSPort != 8443 || response.TLSFingerprint == "" {
+		t.Fatalf("response TLS metadata = %#v, want port and fingerprint", response)
+	}
+
+	assertFileContains(t, filepath.Join(configDir, "upsd.users"), "[controller]")
+	assertFileContains(t, filepath.Join(configDir, "upsd.users"), "password = secret")
+
+	content, err := os.ReadFile(adoptionPath)
+	if err != nil {
+		t.Fatalf("read adoption state: %v", err)
+	}
+	var state adoptionState
+	if err := json.Unmarshal(content, &state); err != nil {
+		t.Fatalf("decode adoption state: %v", err)
+	}
+	if state.ControllerURL != "https://controller.local" || state.TokenSHA256 != api.TokenSHA256Hex("token-123") {
+		t.Fatalf("state = %#v, want controller URL and token hash", state)
+	}
+	if state.TLSPort != 8443 || state.TLSFingerprint == "" {
+		t.Fatalf("state TLS metadata = %#v, want port and fingerprint", state)
+	}
+	if _, err := os.Stat(adopter.tlsCertPath); err != nil {
+		t.Fatalf("TLS cert missing: %v", err)
+	}
+	if _, err := os.Stat(adopter.tlsKeyPath); err != nil {
+		t.Fatalf("TLS key missing: %v", err)
+	}
+	if len(runner.Commands()) == 0 || runner.Commands()[0] != "systemctl reload-or-restart nut-server.service" {
+		t.Fatalf("commands = %v, want nut-server reload", runner.Commands())
+	}
+	if got := inventory.credentials(); len(got) != 1 || got[0] != "controller:secret" {
+		t.Fatalf("inventory credentials = %v, want controller:secret", got)
+	}
+	if got := adopted.values(); len(got) != 1 || !got[0] {
+		t.Fatalf("adopted updates = %v, want [true]", got)
+	}
+}
+
 type fakeWatcher struct {
 	events <-chan hotplug.Event
 }
@@ -175,6 +249,7 @@ func assertFileContains(t *testing.T, path, substring string) {
 
 type fakeInventorySink struct {
 	updates [][]nutconf.DetectedUPS
+	creds   []string
 }
 
 func (f *fakeInventorySink) UpdateInventory(devices []nutconf.DetectedUPS) {
@@ -185,6 +260,16 @@ func (f *fakeInventorySink) UpdateInventory(devices []nutconf.DetectedUPS) {
 
 func (f *fakeInventorySink) count() int {
 	return len(f.updates)
+}
+
+func (f *fakeInventorySink) UpdateNUTCredentials(username, password string) {
+	f.creds = append(f.creds, username+":"+password)
+}
+
+func (f *fakeInventorySink) credentials() []string {
+	values := make([]string, len(f.creds))
+	copy(values, f.creds)
+	return values
 }
 
 type fakeUPSCountSink struct {
@@ -198,5 +283,19 @@ func (f *fakeUPSCountSink) UpdateUPSCount(count int) {
 func (f *fakeUPSCountSink) counts() []int {
 	values := make([]int, len(f.values))
 	copy(values, f.values)
+	return values
+}
+
+type fakeAdoptedSink struct {
+	states []bool
+}
+
+func (f *fakeAdoptedSink) UpdateAdopted(adopted bool) {
+	f.states = append(f.states, adopted)
+}
+
+func (f *fakeAdoptedSink) values() []bool {
+	values := make([]bool, len(f.states))
+	copy(values, f.states)
 	return values
 }
