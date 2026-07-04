@@ -134,7 +134,7 @@ ensure_binfmt
 cleanup_stale_pigen_container
 
 if [ ! -f "$AGENT_SOURCE" ]; then
-	echo "expected agent binary at $AGENT_SOURCE; run make agent first" >&2
+	echo "expected agent binary at $AGENT_SOURCE; run uv run wk build agent first" >&2
 	exit 1
 fi
 
