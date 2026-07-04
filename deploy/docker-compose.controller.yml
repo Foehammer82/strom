@@ -1,0 +1,16 @@
+services:
+  wattkeeper-controller:
+    build:
+      context: ..
+      dockerfile: controller/Dockerfile
+      args:
+        VERSION: dev
+    image: wattkeeper-controller:dev
+    ports:
+      - "9000:9000"
+    volumes:
+      - wattkeeper-controller-data:/data
+    restart: unless-stopped
+
+volumes:
+  wattkeeper-controller-data:

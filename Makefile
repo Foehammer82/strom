@@ -1,18 +1,28 @@
 DIST_DIR := dist
 AGENT_BIN := wattkeeper-agent
+CONTROLLER_BIN := wattkeeper-controller
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 RELEASE_DIR := $(DIST_DIR)/release
 UV ?= uv
 DOCS_UV_RUN := $(UV) run --locked --group docs
 NODE_DEV_UI_LISTEN ?= 127.0.0.1:8080
 NODE_DEV_UI_FLAGS ?=
+CONTROLLER_IMAGE ?= wattkeeper-controller:$(VERSION)
+CONTROLLER_IMAGE_GHCR ?= ghcr.io/foehammer82/wattkeeper-controller:$(VERSION)
 
-.PHONY: agent release-agent test lint image docs-setup docs-build docs-serve node-dev-ui node-dev-ui-open sim-up sim-down
+.PHONY: agent controller release-agent test lint image docs-setup docs-build docs-serve node-dev-ui node-dev-ui-open controller-dev controller-image controller-image-multiarch sim-up sim-down
 
 agent:
 	@mkdir -p $(DIST_DIR)
 	GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=$(VERSION)" -o $(DIST_DIR)/$(AGENT_BIN)-linux-arm64 ./agent/cmd/agent
 	GOOS=linux GOARCH=arm GOARM=6 go build -ldflags "-X main.version=$(VERSION)" -o $(DIST_DIR)/$(AGENT_BIN)-linux-armv6 ./agent/cmd/agent
+
+controller:
+	@mkdir -p $(DIST_DIR)
+	go build -ldflags "-X main.version=$(VERSION)" -o $(DIST_DIR)/$(CONTROLLER_BIN) ./controller/cmd/controller
+
+controller-dev:
+	go run ./controller/cmd/controller --data-dir ./controller/dist/data --listen :9000
 
 release-agent: agent
 	@rm -rf $(RELEASE_DIR)
@@ -55,6 +65,12 @@ node-dev-ui:
 
 node-dev-ui-open:
 	go run ./agent/cmd/agent --dev-ui --listen $(NODE_DEV_UI_LISTEN) --http-auth=false $(NODE_DEV_UI_FLAGS)
+
+controller-image:
+	docker build --build-arg VERSION=$(VERSION) -f controller/Dockerfile -t $(CONTROLLER_IMAGE) .
+
+controller-image-multiarch:
+	docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) -f controller/Dockerfile -t $(CONTROLLER_IMAGE_GHCR) .
 
 sim-up sim-down:
 	@echo not implemented
