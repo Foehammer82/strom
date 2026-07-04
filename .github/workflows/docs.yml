@@ -43,7 +43,7 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Build docs site
-        run: make docs-build
+        run: uv run wk docs build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

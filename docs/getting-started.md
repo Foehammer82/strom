@@ -31,7 +31,7 @@ If you build locally, the expected outputs are:
 From the repo root:
 
 ```sh
-make image VERSION=v0.1.0-rc1
+uv run wk image node --version v0.1.0-rc1
 ```
 
 When the build completes, verify that the `.img.xz` and `.sha256` files exist in `dist/`.
@@ -103,8 +103,8 @@ Today, Wattkeeper is no longer node-only. After validating the node image, you c
 For local controller development from the repo root:
 
 ```sh
-make controller-web
-make controller-dev
+uv run wk build controller-web
+uv run wk dev controller
 ```
 
 Then open `http://127.0.0.1:9000/` to reach the controller interface.

@@ -7,6 +7,7 @@ Thanks for contributing. Day-to-day work here is expected to happen on feature b
 - [Start Here](#start-here)
 - [Workflow](#workflow)
 - [What To Change](#what-to-change)
+- [Naming Conventions](#naming-conventions)
 - [Code Of Conduct](#code-of-conduct)
 - [Testing And Validation](#testing-and-validation)
 - [Release And Maintainer Notes](#release-and-maintainer-notes)
@@ -37,6 +38,17 @@ This project is being built in phases. Please keep contributions aligned to the 
 - If you are adding new behavior, include tests when practical, especially for parsers, renderers, release automation, and other text-heavy code.
 - Prefer deterministic output for generated files so diffs stay stable and easy to review.
 
+## Naming Conventions
+
+To keep language consistent across docs, code, and operations, use this naming pattern:
+
+- Use Wattkeeper as the official product name in public docs, release notes, and user-facing UI text.
+- Use WK as the engineering shorthand in internal technical writing and compact labels where the full name is too long.
+- Keep repository, module, package, and artifact paths as `wattkeeper` unless there is an explicit migration plan.
+- Keep explicit service and binary names such as `wattkeeper-agent` and `wattkeeper-controller` for clarity.
+- Use the `WK_` prefix for new environment variables unless an existing interface already defines a different prefix.
+- Treat Whitaker as an optional informal spoken nickname only; do not use it in user-facing docs, product copy, URLs, or release assets.
+
 ## Code Of Conduct
 
 This project follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). If you need to
@@ -47,7 +59,11 @@ than opening a public issue.
 
 CI runs lint, tests, and the agent cross-build on pushes and pull requests through `.github/workflows/ci.yml`.
 
-Before opening a PR, run the narrowest useful validation for your change. At minimum, make sure the relevant package tests or `make test` pass locally when your change affects code.
+Use the shared `wk` CLI for local operational workflows whenever possible so contributor and Copilot usage stays aligned and tooling improvements benefit both paths.
+
+Before opening a PR, run the narrowest useful validation for your change. At minimum, make sure the relevant package tests or `uv run wk check test` pass locally when your change affects code.
+
+For editor and commit-time hygiene, install the repo's pre-commit hooks with `uv run wk hooks install` and use `uv run wk hooks run` to check the full tracked tree. The hook set covers whitespace, final newlines, line endings, YAML/TOML/JSON syntax, merge-conflict markers, large files, executable shell script metadata, and `gofmt`.
 
 For image or release work, validate with the local commands described in [README.md](README.md) and [ROADMAP.md](ROADMAP.md). The image pipeline has separate build expectations from the Go binaries, so do not assume one covers the other.
 

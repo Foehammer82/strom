@@ -1,8 +1,17 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "wattkeeper-docs"
+name = "wattkeeper"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "typer>=0.12,<1.0",
+]
+
+[project.scripts]
+wk = "tools.__main__:wk_entrypoint"
 
 [dependency-groups]
 docs = [
@@ -10,6 +19,12 @@ docs = [
   "mkdocs-material>=9.5,<10.0",
   "mkdocs-git-revision-date-localized-plugin>=1.2,<2.0",
 ]
+dev = [
+  "pre-commit>=4,<5",
+]
 
 [tool.uv]
-package = false
+package = true
+
+[tool.setuptools.packages.find]
+include = ["tools*"]

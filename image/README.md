@@ -24,12 +24,12 @@ That means a normal local build can often succeed with Docker alone, as long as 
 From the repo root:
 
 ```sh
-make image VERSION=v0.1.0
+uv run wk image node --version v0.1.0
 ```
 
 That target:
 
-1. cross-compiles the agent with `make agent`
+1. cross-compiles the agent with `uv run wk build agent --version v0.1.0`
 2. clones the `bookworm-arm64` pi-gen branch into a temporary workspace without spaces in the path
 3. injects the Wattkeeper custom stage plus the `dist/wattkeeper-agent-linux-arm64` payload and deploy assets
 4. runs `build-docker.sh`

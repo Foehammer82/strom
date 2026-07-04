@@ -6,6 +6,7 @@ This directory contains project-specific Copilot skills for recurring workflows 
 
 - `nut-agent-validation`: repeatable Phase 1 validation for scanner parsing, config rendering, stable naming, service reload behavior, and focused Go test selection.
 - `pi-node-debug`: Raspberry Pi node bring-up and field-debug flow for hotplug, generated NUT config, systemd, `upsc`, health, and mDNS troubleshooting.
+- `cli-tools-workflow`: shared CLI workflow for `wk` and `uv run wk` so Copilot and developers use the same operational tooling.
 
 ## How to use them
 

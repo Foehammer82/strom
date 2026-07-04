@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+      - id: check-added-large-files
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  - repo: local
+    hooks:
+      - id: wk-check-lint
+        name: wk check lint
+        entry: uv run wk check lint
+        language: system
+        pass_filenames: false
+        files: ^(agent|controller)/.*\.go$

@@ -12,7 +12,7 @@ The image build produces artifacts like:
 From the repo root:
 
 ```sh
-make image VERSION=v0.1.0
+uv run wk image node --version v0.1.0
 ```
 
 ## Checksum Validation
@@ -63,8 +63,8 @@ Wattkeeper adds a first-boot service that:
 
 When working on the image pipeline or Pi provisioning flow, the current validation sequence is:
 
-1. Run `make image VERSION=v0.1.0-rc1` and wait for the `.img.xz` and `.sha256` artifacts in `dist/`.
-2. If you are iterating on the custom pi-gen stage after a failed run, retry with `CONTINUE=1 make image VERSION=v0.1.0-rc1`.
+1. Run `uv run wk image node --version v0.1.0-rc1` and wait for the `.img.xz` and `.sha256` artifacts in `dist/`.
+2. If you are iterating on the custom pi-gen stage after a failed run, retry with `uv run wk image node --version v0.1.0-rc1 --continue`.
 3. Flash the image with Raspberry Pi Imager and apply WiFi customization there. Add SSH public keys only if you want shell access.
 4. Boot a Pi Zero 2 W and attach a USB UPS.
 5. Verify there is no first-boot username or password prompt, then verify hostname rewrite, `/var/lib/wattkeeper` creation, mDNS advertisement, and remote `upsc` access.
