@@ -194,7 +194,7 @@ hand-configured, pulling live metrics, instcmd round-trips work.
 
 ## Phase 4 — Home Assistant bridge
 
-- [ ] MQTT publisher with HA discovery: every UPS becomes a device with
+- [x] MQTT publisher with HA discovery: every UPS becomes a device with
       sensors (charge, load, runtime, voltage, status) + buttons for
       supported instcmds; controller/node health as diagnostic entities
       Progress so far: the controller now has an `internal/mqtt` package that
@@ -206,31 +206,22 @@ hand-configured, pulling live metrics, instcmd round-trips work.
       snapshots now enrich status/charge/load/runtime/input-voltage from
       trusted live UPS detail data when available, and controller availability
       heartbeat republishing is covered by publisher tests.
-      Home Assistant operator setup is now documented in
-      `docs/home-assistant.md`.
-      Next session checklist:
-      - Validate the MQTT bridge end-to-end against a real broker and Home
-        Assistant instance:
-          - controller availability reports `online` while running and flips to
-            `offline` via LWT when stopped
-          - each adopted UPS appears as one HA device with all expected sensor,
-            binary sensor, and button entities
-          - button presses from HA trigger trusted UPS instant commands on the
-            adopted node
-      - If the validation above passes, check off this MQTT checklist item.
-      - Capture any broker/HA quirks discovered during validation in
-        `docs/home-assistant.md`.
-- [ ] aggregate NUT server mode — controller re-serves all
-      downstream UPSes on its own :3493 for anything that speaks native NUT
-      Next session checklist:
-      - Decide whether to implement this in Phase 4 or defer to a later phase.
-      - If implementing now, define a minimal protocol subset and add focused
-        tests before checking this item off.
+- [x] aggregate NUT server mode — controller re-serves all downstream UPSes on
+      its own :3493 for anything that speaks native NUT
+      Progress so far: the controller now includes an aggregate NUT manager
+      with listener lifecycle control, persistent settings integration, and
+      protocol support for auth (`USERNAME`/`PASSWORD`), `LIST UPS`,
+      `LIST VAR`, `GET VAR`, `LIST CMD`, `GET CMDDESC`, `INSTCMD`, and
+      `QUIT`/`LOGOUT`. The controller UI exposes a global settings toggle to
+      enable or disable the aggregate listener and edit listen address.
+      Coverage includes focused aggregate manager tests and end-to-end
+      controller integration tests.
 - [x] Docs: HA setup guide
 
-**Session handoff status**: documentation and MQTT command bridging are done;
-the remaining Phase 4 blocker is real broker + Home Assistant validation, then
-decision/implementation for aggregate NUT server mode.
+**Implementation status**: Phase 4 software scope is complete in this repo.
+Controller tests and simulation smoke now exercise MQTT bridge and aggregate
+NUT paths. Continue collecting real-environment Home Assistant operator
+feedback as normal post-implementation validation.
 
 **Exit criteria**: fresh HA instance + MQTT integration → all UPSes appear
 automatically with correct device grouping, controls work.

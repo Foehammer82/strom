@@ -39,6 +39,17 @@ Notes:
 - Published discovery and state messages are retained.
 - The controller publishes availability using MQTT Last Will and Testament (LWT).
 
+## Configure Aggregate NUT Listener (Optional)
+
+If you also want native NUT client compatibility from the controller endpoint:
+
+1. Open the controller Settings page.
+2. Enable Aggregate NUT listener.
+3. Set listen address (default `:3493`) and save.
+
+You can disable it from the same page at any time without restarting the
+controller.
+
 ## Home Assistant MQTT Integration
 
 1. In Home Assistant, open Settings -> Devices and Services.
