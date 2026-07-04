@@ -40,16 +40,14 @@ This page separates what Wattkeeper ships today from what is still planned.
 - provides a controller settings UI control to enable or disable the aggregate
   NUT listener without restarting the controller
 
-## Planned Features
-
 ### Home Assistant Bridge
 
-- In progress in Phase 4:
-  - retained MQTT discovery and state publishing
-  - per-node availability and controller availability topics
-  - button command topic bridging to trusted UPS commands
-  - aggregate NUT server mode for native NUT clients
-  - setup and integration guidance in [Home Assistant Setup](home-assistant.md)
+- publishes retained MQTT discovery and state payloads for adopted UPS entities
+- publishes controller and per-node availability topics using MQTT LWT semantics
+- bridges Home Assistant button command topics to trusted UPS instant commands
+- documents setup and operator troubleshooting in [Home Assistant Setup](home-assistant.md)
+
+## Planned Features
 
 ### Lifecycle And Hardening
 
@@ -66,6 +64,6 @@ This page separates what Wattkeeper ships today from what is still planned.
 
 ## Current Limitations
 
-- Home Assistant integration is in progress and not yet complete against full Phase 4 exit criteria
+- Home Assistant functionality still benefits from real-environment validation and long-run broker/HA soak testing
 - Phase 3 still needs real-hardware validation against its exit criteria
-- MQTT alert delivery is deferred to the Home Assistant bridge phase
+- MQTT alert delivery is not yet part of the shipped Home Assistant bridge scope

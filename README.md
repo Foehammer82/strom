@@ -75,7 +75,7 @@ Work is intended to follow the roadmap phase by phase rather than building the f
 - [x] Phase 1: ship the node agent MVP
 - [x] Phase 2: build a flashable image
 - [ ] Phase 3: add the controller, adoption flow, and fleet UI
-- [ ] Phase 4: add the Home Assistant bridge
+- [x] Phase 4: add the Home Assistant bridge
 
 Phase 3 implementation is now present in the repository: discovery, adoption,
 controller packaging, polling/history, alerting, and the React controller GUI.
