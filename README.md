@@ -6,7 +6,19 @@ Small Raspberry Pi nodes run NUT near the hardware, automatically detect USB UPS
 
 ## Status
 
-This repository now ships the Phase 1 node agent and the Phase 2 flashable image pipeline. The controller and Home Assistant bridge phases are still ahead.
+This repository now ships the Phase 1 node agent, the Phase 2 flashable image pipeline, and a substantial Phase 3 controller foundation.
+
+Today that means:
+
+- Raspberry Pi nodes auto-detect USB UPS hardware, generate NUT configuration, advertise themselves over mDNS, and expose a branded local dashboard with live telemetry and UPS control actions.
+- The image pipeline builds a flashable Raspberry Pi OS Lite image for node deployment.
+- The controller can discover nodes, persist them in SQLite, adopt pending nodes, establish node-local trust material, and serve a branded fleet shell.
+
+What is still ahead:
+
+- Controller-side NUT polling/history retention
+- The fuller controller fleet/per-UPS UI described in the roadmap
+- Alerting and the Home Assistant bridge
 
 - [ROADMAP.md](ROADMAP.md) defines the architecture, phases, and exit criteria.
 - [docs/](docs) contains the user-facing documentation set, including getting started, features, FAQ, and operational reference material.
@@ -43,10 +55,9 @@ wattkeeper/
 │       ├── nutconf/            # nut-scanner parsing + ups.conf generation
 │       ├── discovery/          # mDNS advertisement
 │       └── api/                # local HTTP API
-├── controller/                 # Go backend (Phase 3+)
-│   ├── cmd/controller/
-│   ├── internal/
-│   └── web/                    # planned: React UI
+├── controller/                 # Go backend + current fleet shell (Phase 3)
+│   ├── cmd/controller/         # controller entrypoint + embedded web shell
+│   └── internal/               # browse, CA, registry, secure store
 ├── image/                      # pi-gen based SD card image build
 │   ├── stage-wattkeeper/       # custom pi-gen stage
 │   └── config                  # pi-gen config
@@ -61,10 +72,14 @@ wattkeeper/
 Work is intended to follow the roadmap phase by phase rather than building the full system up front.
 
 - [x] Phase 0: scaffold the monorepo and CI
-- [ ] Phase 1: ship the node agent MVP
-- [ ] Phase 2: build a flashable image
+- [x] Phase 1: ship the node agent MVP
+- [x] Phase 2: build a flashable image
 - [ ] Phase 3: add the controller, adoption flow, and fleet UI
 - [ ] Phase 4: add the Home Assistant bridge
+
+Phase 3 is currently in progress: discovery, adoption, controller packaging,
+and the first fleet shell are implemented, but polling/history/alerts and the
+full controller UI remain unfinished.
 
 When implementing code in this repository:
 
@@ -85,17 +100,26 @@ If you are starting work from scratch:
 
 ## Releases Today
 
-This repository now produces both versioned agent release artifacts and a flashable Raspberry Pi OS Lite image for Wattkeeper nodes:
+This repository now produces versioned agent release artifacts, a flashable Raspberry Pi OS Lite image for Wattkeeper nodes, and a published multi-arch controller container image:
 
 1. Create and push a SemVer-style tag such as `v0.1.0` for a normal release or `v0.1.0-rc1` for a prerelease.
 2. GitHub Actions runs `.github/workflows/release.yml`.
-3. The workflow runs tests, builds the agent for `linux/arm64` and `linux/armv6`, packages each archive with the install assets from `deploy/`, builds the `wattkeeper-node-<version>.img.xz` image through pi-gen, and publishes all artifacts to the GitHub Release for that tag.
+3. The workflow runs tests, builds the agent for `linux/arm64` and `linux/armv6`, packages each archive with the install assets from `deploy/`, builds the `wattkeeper-node-<version>.img.xz` image through pi-gen, and publishes those artifacts to the GitHub Release for that tag.
+4. The same tag workflow also builds and pushes the multi-arch controller image to `ghcr.io/<owner>/wattkeeper-controller` for `linux/amd64` and `linux/arm64`.
 
 You can build the same release payload locally with:
 
 ```sh
 make release-agent VERSION=v0.1.0
 make image VERSION=v0.1.0
+make controller-image VERSION=v0.1.0
+```
+
+For local controller iteration, use:
+
+```sh
+make controller
+make controller-dev
 ```
 
 Image build prerequisites and the flash workflow are documented in [image/README.md](image/README.md).

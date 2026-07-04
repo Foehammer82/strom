@@ -7,6 +7,7 @@ This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making no
 - Workspace slash-command prompts for roadmap work live in `.github/prompts/`. When a task maps to one of those phases, prefer the matching prompt file over ad hoc phase prompts.
 - Project-specific reusable workflows live in `.github/skills/`. Use those for repeatable validation and Raspberry Pi debugging tasks instead of re-deriving the procedure each time.
 - Before starting roadmap-driven work, review the relevant checklist items in `ROADMAP.md`. As items become fully complete, update `ROADMAP.md` in the same change and check off only the items that are actually done.
+- As roadmap-driven work changes what ships today, how releases are produced, or how operators should understand the current product surface, update `README.md` in the same change so it stays accurate as implementation progresses.
 - If you change the repo's prompt or skill workflow, keep `.github/prompts/`, `.github/skills/`, `README.md`, `ROADMAP.md`, and `CONTRIBUTING.md` aligned during roadmap-driven development. Once Phase 6 is complete and `ROADMAP.md` is deleted, refresh `CONTRIBUTING.md` and any remaining guidance that still assumes roadmap-first execution.
 - Do not reintroduce `PROMPTS.md`.
 - Keep versioning and release automation aligned with the current GitHub Actions tag pattern: stable releases use `vMAJOR.MINOR.PATCH`, prereleases use `vMAJOR.MINOR.PATCH-QUALIFIER` such as `v0.1.0-rc1` or `v0.1.0-beta1`.
