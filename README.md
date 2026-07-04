@@ -21,27 +21,49 @@ This repository now ships the Phase 1 node agent and the Phase 2 flashable image
 - Home Assistant integration through a controller-side bridge
 - A flashable Pi image for simple deployment
 
-## Planned Architecture
+## Repo Layout
 
-The repo is intended to become a Go monorepo with these main areas:
+> [!NOTE]
+> Entries tagged `planned` are still future work and are not implemented in the workspace yet.
 
-- `agent/`: Raspberry Pi node agent that detects UPS devices, manages NUT config, advertises via mDNS, and exposes a local API
-- `controller/`: Central backend and web UI for discovery, adoption, metrics, and fleet management
-- `deploy/`: Systemd units, install scripts, and related deployment assets
-- `image/`: Pi image build pipeline based on pi-gen
-- `sim/`: Optional simulation rig for end-to-end testing without hardware
-
-The authoritative planned layout and behavior live in [ROADMAP.md](ROADMAP.md).
+```text
+wattkeeper/
+├── ROADMAP.md
+├── .github/
+│   ├── copilot-instructions.md # repo guidance for Copilot sessions
+│   ├── prompts/                # slash-command prompts for roadmap phases
+│   ├── skills/                 # project-specific Copilot skills
+│   └── workflows/
+├── Makefile                    # top-level build/test/image targets
+├── agent/                      # Go node agent (runs on the Pi)
+│   ├── cmd/agent/
+│   └── internal/
+│       ├── hotplug/            # udev event watching
+│       ├── nutconf/            # nut-scanner parsing + ups.conf generation
+│       ├── discovery/          # mDNS advertisement
+│       └── api/                # local HTTP API
+├── controller/                 # Go backend (Phase 3+)
+│   ├── cmd/controller/
+│   ├── internal/
+│   └── web/                    # planned: React UI
+├── image/                      # pi-gen based SD card image build
+│   ├── stage-wattkeeper/       # custom pi-gen stage
+│   └── config                  # pi-gen config
+├── sim/                        # planned: virtual UPS + node simulation
+│   ├── dummy-ups/              # planned: NUT dummy-ups fixtures
+│   └── docker-compose.yml      # planned: simulated node topology
+└── deploy/                     # systemd units, udev rules, install scripts
+```
 
 ## Development Approach
 
 Work is intended to follow the roadmap phase by phase rather than building the full system up front.
 
-- Phase 0: scaffold the monorepo and CI
-- Phase 1: ship the node agent MVP
-- Phase 2: build a flashable image
-- Phase 3: add the controller, adoption flow, and fleet UI
-- Phase 4: add the Home Assistant bridge
+- [x] Phase 0: scaffold the monorepo and CI
+- [ ] Phase 1: ship the node agent MVP
+- [ ] Phase 2: build a flashable image
+- [ ] Phase 3: add the controller, adoption flow, and fleet UI
+- [ ] Phase 4: add the Home Assistant bridge
 
 When implementing code in this repository:
 
