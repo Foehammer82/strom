@@ -14,6 +14,7 @@ QEMU_BIN=''
 QEMU_HINT=''
 BINFMT_HELPER_IMAGE=${BINFMT_HELPER_IMAGE:-tonistiigi/binfmt:latest}
 QEMU_HELPER_IMAGE=${QEMU_HELPER_IMAGE:-multiarch/qemu-user-static:latest}
+PI_GEN_CONTAINER_NAME=${CONTAINER_NAME:-pigen_work}
 
 require_command() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -78,10 +79,31 @@ cleanup_stale_pigen_container() {
 		return
 	fi
 
-	if docker container inspect pigen_work >/dev/null 2>&1; then
+	if docker container inspect "$PI_GEN_CONTAINER_NAME" >/dev/null 2>&1; then
 		echo "Removing stale pi-gen work container..."
-		docker rm -f -v pigen_work >/dev/null
+		docker rm -f -v "$PI_GEN_CONTAINER_NAME" >/dev/null
 	fi
+}
+
+copy_deploy_volume_from_container() {
+	container_name=$1
+	destination_dir=$2
+
+	if ! docker container inspect "$container_name" >/dev/null 2>&1; then
+		return 1
+	fi
+
+	deploy_volume=$(docker inspect "$container_name" --format '{{range .Mounts}}{{if eq .Destination "/pi-gen/deploy"}}{{.Name}}{{end}}{{end}}')
+	if [ -z "$deploy_volume" ]; then
+		return 1
+	fi
+
+	mkdir -p "$destination_dir"
+	if ! docker run --rm -v "$deploy_volume:/in:ro" -v "$destination_dir:/out" alpine sh -lc 'cp -a /in/. /out/'; then
+		return 1
+	fi
+
+	find "$destination_dir" -maxdepth 1 -type f -name '*wattkeeper-node*.img.xz' | grep -q .
 }
 
 extract_qemu_from_docker() {
@@ -158,10 +180,25 @@ touch "$PI_GEN_DIR/stage2/SKIP_IMAGES"
 rm -f "$IMAGE_OUTPUT" "$CHECKSUM_OUTPUT"
 
 echo "Running pi-gen Docker build..."
-(
+
+build_succeeded=1
+if ! (
 	cd "$PI_GEN_DIR"
 	PATH="$QEMU_PATH_PREFIX" WATTKEEPER_STAGE_DIR='stage-wattkeeper' ./build-docker.sh -c "$WORKSPACE_DIR/config"
-)
+); then
+	build_succeeded=0
+fi
+
+if [ "$build_succeeded" -ne 1 ]; then
+	echo "pi-gen Docker wrapper returned a non-zero status; attempting to recover artifacts from the preserved deploy volume..."
+	if ! copy_deploy_volume_from_container "$PI_GEN_CONTAINER_NAME" "$PI_GEN_DIR/deploy"; then
+		echo "failed to recover pi-gen deploy artifacts from container $PI_GEN_CONTAINER_NAME" >&2
+		exit 1
+	fi
+	if [ "${PRESERVE_CONTAINER:-0}" != "1" ]; then
+		docker rm -f -v "$PI_GEN_CONTAINER_NAME" >/dev/null 2>&1 || true
+	fi
+fi
 
 FOUND_IMAGE=$(find "$PI_GEN_DIR/deploy" -maxdepth 1 -type f -name '*wattkeeper-node*.img.xz' | head -n 1)
 if [ -z "$FOUND_IMAGE" ]; then
