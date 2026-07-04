@@ -200,6 +200,54 @@ func TestRuntimeAdopterRejectsSecondAdoption(t *testing.T) {
 	}
 }
 
+func TestRuntimeAdopterAcceptsIdempotentRepeatAdoption(t *testing.T) {
+	t.Parallel()
+
+	adoptionPath := filepath.Join(t.TempDir(), "adoption.json")
+	request := nodeapi.AdoptRequest{
+		CAPEM:         "pem-data",
+		NUTUser:       "controller",
+		NUTPassword:   "secret",
+		APIToken:      "token-123",
+		ControllerURL: "https://controller.local",
+	}
+	state := adoptionState{
+		CAPEM:          request.CAPEM,
+		NUTUser:        request.NUTUser,
+		NUTPassword:    request.NUTPassword,
+		TokenSHA256:    api.TokenSHA256Hex(request.APIToken),
+		ControllerURL:  request.ControllerURL,
+		TLSPort:        8443,
+		TLSFingerprint: "abc123",
+		AdoptedAt:      time.Now().UTC(),
+	}
+	payload, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("Marshal(state) error = %v", err)
+	}
+	if err := os.WriteFile(adoptionPath, payload, 0o600); err != nil {
+		t.Fatalf("write adoption state: %v", err)
+	}
+
+	adopter := &nodeapi.RuntimeAdopter{
+		AdoptionPath: adoptionPath,
+		Serial:       "serial-1234",
+		Version:      "v0.3.0",
+		TLSPort:      8443,
+	}
+
+	response, err := adopter.ApplyAdoption(context.Background(), request)
+	if err != nil {
+		t.Fatalf("ApplyAdoption() error = %v", err)
+	}
+	if response.Serial != "serial-1234" || response.TokenSHA256 != state.TokenSHA256 {
+		t.Fatalf("response = %#v, want existing adoption identity", response)
+	}
+	if response.TLSPort != 8443 || response.TLSFingerprint != "abc123" {
+		t.Fatalf("response TLS metadata = %#v, want persisted TLS metadata", response)
+	}
+}
+
 func TestResetNodeStateRemovesAdoptionAndTLSMaterial(t *testing.T) {
 	t.Parallel()
 

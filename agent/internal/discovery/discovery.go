@@ -64,6 +64,14 @@ func ResolveIdentity() (Identity, error) {
 	return resolveIdentity(os.ReadFile)
 }
 
+func IdentityForSerial(serial string) Identity {
+	normalized := normalizeIdentifier(serial)
+	return Identity{
+		Serial:   normalized,
+		Instance: instanceName(normalized),
+	}
+}
+
 func NewAdvertiser(logger *log.Logger, meta Metadata) *Advertiser {
 	if meta.Port == 0 {
 		meta.Port = defaultPort

@@ -1,0 +1,11 @@
+# Simulated APC Back-UPS BE1050G3 fixture A
+ups.mfr: APC
+ups.model: Back-UPS BE1050G3
+ups.serial: SIM-BE1050G3-A
+ups.status: OB DISCHRG
+battery.charge: 62
+battery.runtime: 1320
+battery.voltage: 27.2
+input.voltage: 0.0
+output.voltage: 119.5
+ups.load: 55

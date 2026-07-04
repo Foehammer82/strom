@@ -60,7 +60,47 @@ type adoptionState struct {
 }
 
 func (a *RuntimeAdopter) ApplyAdoption(ctx context.Context, req AdoptRequest) (AdoptResponse, error) {
+	tokenHash := internalapiTokenSHA256Hex(req.APIToken)
 	if _, err := os.Stat(a.AdoptionPath); err == nil {
+		existing, readErr := readAdoptionState(a.AdoptionPath)
+		if readErr != nil {
+			return AdoptResponse{}, fmt.Errorf("read existing adoption config: %w", readErr)
+		}
+		if existing.TokenSHA256 == tokenHash &&
+			existing.NUTUser == req.NUTUser &&
+			existing.NUTPassword == req.NUTPassword &&
+			existing.ControllerURL == req.ControllerURL {
+			if a.Logger != nil {
+				a.Logger.Printf("adoption replay accepted serial=%s controller=%s", a.Serial, req.ControllerURL)
+			}
+			tlsPort := existing.TLSPort
+			if tlsPort == 0 {
+				tlsPort = a.TLSPort
+			}
+			fingerprint := existing.TLSFingerprint
+			if fingerprint == "" {
+				var certErr error
+				fingerprint, certErr = ensureNodeCertificate(a.Serial, a.TLSCertPath, a.TLSKeyPath)
+				if certErr != nil {
+					return AdoptResponse{}, fmt.Errorf("ensure node TLS certificate: %w", certErr)
+				}
+			}
+			if existing.TLSPort != tlsPort || existing.TLSFingerprint != fingerprint {
+				existing.TLSPort = tlsPort
+				existing.TLSFingerprint = fingerprint
+				if writeErr := writeAdoptionState(a.AdoptionPath, existing); writeErr != nil {
+					return AdoptResponse{}, fmt.Errorf("write adoption config: %w", writeErr)
+				}
+			}
+			return AdoptResponse{
+				Serial:         a.Serial,
+				Version:        a.Version,
+				ControllerURL:  req.ControllerURL,
+				TLSPort:        tlsPort,
+				TLSFingerprint: fingerprint,
+				TokenSHA256:    existing.TokenSHA256,
+			}, nil
+		}
 		return AdoptResponse{}, fmt.Errorf("%w: %s", ErrNodeAlreadyAdopted, a.Serial)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return AdoptResponse{}, fmt.Errorf("stat adoption config: %w", err)
@@ -70,7 +110,7 @@ func (a *RuntimeAdopter) ApplyAdoption(ctx context.Context, req AdoptRequest) (A
 		CAPEM:         req.CAPEM,
 		NUTUser:       req.NUTUser,
 		NUTPassword:   req.NUTPassword,
-		TokenSHA256:   internalapiTokenSHA256Hex(req.APIToken),
+		TokenSHA256:   tokenHash,
 		ControllerURL: req.ControllerURL,
 		TLSPort:       a.TLSPort,
 		AdoptedAt:     time.Now().UTC(),
@@ -80,14 +120,10 @@ func (a *RuntimeAdopter) ApplyAdoption(ctx context.Context, req AdoptRequest) (A
 		return AdoptResponse{}, fmt.Errorf("ensure node TLS certificate: %w", err)
 	}
 	state.TLSFingerprint = fingerprint
-	payload, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return AdoptResponse{}, fmt.Errorf("marshal adoption config: %w", err)
-	}
 	if err := os.MkdirAll(filepath.Dir(a.AdoptionPath), 0o755); err != nil {
 		return AdoptResponse{}, fmt.Errorf("create adoption dir: %w", err)
 	}
-	if err := os.WriteFile(a.AdoptionPath, payload, 0o600); err != nil {
+	if err := writeAdoptionState(a.AdoptionPath, state); err != nil {
 		return AdoptResponse{}, fmt.Errorf("write adoption config: %w", err)
 	}
 
@@ -114,6 +150,26 @@ func (a *RuntimeAdopter) ApplyAdoption(ctx context.Context, req AdoptRequest) (A
 		TLSFingerprint: fingerprint,
 		TokenSHA256:    internalapiTokenSHA256Hex(req.APIToken),
 	}, nil
+}
+
+func readAdoptionState(path string) (adoptionState, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return adoptionState{}, err
+	}
+	var state adoptionState
+	if err := json.Unmarshal(content, &state); err != nil {
+		return adoptionState{}, err
+	}
+	return state, nil
+}
+
+func writeAdoptionState(path string, state adoptionState) error {
+	payload, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, payload, 0o600)
 }
 
 func DynamicCertificateLoader(certPath, keyPath string) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {

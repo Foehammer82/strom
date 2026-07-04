@@ -25,6 +25,7 @@ import (
 	"github.com/Foehammer82/wattkeeper/agent/internal/hotplug"
 	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
 	"github.com/Foehammer82/wattkeeper/agent/internal/services"
+	"github.com/Foehammer82/wattkeeper/agent/internal/sim"
 	"github.com/Foehammer82/wattkeeper/agent/nodeapi"
 	"gopkg.in/yaml.v3"
 )
@@ -45,6 +46,9 @@ type config struct {
 	tlsListen string
 	logLevel  string
 	devUI     bool
+	demoMode  bool
+	simulate  string
+	nodeID    string
 	httpAuth  bool
 	authPath  string
 }
@@ -149,6 +153,9 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.tlsListen, "tls-listen", ":8443", "controller API TLS listen address")
 	flags.StringVar(&cfg.logLevel, "log-level", "info", "log verbosity level")
 	flags.BoolVar(&cfg.devUI, "dev-ui", false, "serve the node UI and API with sample data only")
+	flags.BoolVar(&cfg.demoMode, "demo-mode", false, "run deterministic simulation helpers intended for demo and evaluation workflows")
+	flags.StringVar(&cfg.simulate, "simulate", "", "directory containing simulated *.dev fixtures; bypasses nut-scanner and hotplug netlink")
+	flags.StringVar(&cfg.nodeID, "node-id", "", "optional node identity override for container and simulation replicas")
 	flags.BoolVar(&cfg.httpAuth, "http-auth", true, "require bootstrap and Basic Auth for the node dashboard and detailed status routes")
 	flags.StringVar(&cfg.authPath, "http-auth-file", "/var/lib/wattkeeper/webui-auth.json", "path to the node web auth file")
 	if err := flags.Parse(args); err != nil {
@@ -211,9 +218,16 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	identity, err := discovery.ResolveIdentity()
-	if err != nil {
-		return fmt.Errorf("resolve node identity: %w", err)
+	override := strings.TrimSpace(cfg.nodeID)
+	var identity discovery.Identity
+	var err error
+	if override != "" {
+		identity = discovery.IdentityForSerial(override)
+	} else {
+		identity, err = discovery.ResolveIdentity()
+		if err != nil {
+			return fmt.Errorf("resolve node identity: %w", err)
+		}
 	}
 
 	listener, err := net.Listen("tcp", cfg.listen)
@@ -540,10 +554,19 @@ func runDevUI(ctx context.Context, logger *log.Logger, cfg config) error {
 }
 
 func newAgentRuntime(cfg config, logger *log.Logger) *agentRuntime {
+	var watcher hotplugWatcher = hotplug.NewWatcher(logger, hotplug.Options{Debounce: 3 * time.Second})
+	scanner := scanner(nutconf.NewScanner(logger))
+	reloader := reloader(services.NewManager(logger))
+	if cfg.simulate != "" {
+		watcher = sim.NewWatcher(logger, sim.Options{Dir: cfg.simulate, Debounce: 3 * time.Second})
+		scanner = sim.NewScanner(logger, cfg.simulate, cfg.demoMode)
+		reloader = services.NewLocalNUTManager(logger, services.LocalNUTOptions{ConfigDir: cfg.configDir})
+	}
+
 	return &agentRuntime{
-		watcher:         hotplug.NewWatcher(logger, hotplug.Options{Debounce: 3 * time.Second}),
-		scanner:         nutconf.NewScanner(logger),
-		reloader:        services.NewManager(logger),
+		watcher:         watcher,
+		scanner:         scanner,
+		reloader:        reloader,
 		logger:          logger,
 		configDir:       cfg.configDir,
 		agentConfigPath: defaultAgentConfigPath,

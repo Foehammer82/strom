@@ -1,0 +1,71 @@
+services:
+  wattkeeper-agent:
+    build:
+      context: ..
+      dockerfile: agent/Dockerfile
+      args:
+        VERSION: dev
+    image: wattkeeper-agent:dev
+    environment:
+      AGENT_SIM_DIR: /sim/dummy-ups
+      AGENT_DEMO_MODE: "true"
+      AGENT_HTTP_AUTH: "false"
+    volumes:
+      - ./dummy-ups:/sim/dummy-ups
+    restart: unless-stopped
+    networks:
+      - wattkeeper
+
+  wattkeeper-controller:
+    build:
+      context: ..
+      dockerfile: controller/Dockerfile
+      args:
+        VERSION: dev
+    tmpfs:
+      - /data
+    command:
+      - --data-dir=/data
+      - --listen=:9000
+      - --poll-interval=5s
+      - --discovery-seeds=${DISCOVERY_SEEDS:-wattkeeper-agent:80}
+      - --mqtt-broker=tcp://mosquitto:1883
+      - --mqtt-discovery-prefix=homeassistant
+      - --mqtt-state-prefix=wattkeeper
+      - --aggregate-nut-listen=:3493
+      - --aggregate-nut-enabled=true
+      - --aggregate-nut-user=controller
+      - --aggregate-nut-pass=controller
+    ports:
+      - "9000:9000"
+      - "3493:3493"
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+    networks:
+      - wattkeeper
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    restart: unless-stopped
+    networks:
+      - wattkeeper
+
+  home-assistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    profiles: ["ha"]
+    depends_on:
+      - mosquitto
+    ports:
+      - "8123:8123"
+    restart: unless-stopped
+    networks:
+      - wattkeeper
+
+# mDNS in Docker is platform-dependent. If pending nodes are not discovered,
+# use host networking for agent/controller or run an mDNS reflector sidecar.
+networks:
+  wattkeeper:
+    driver: bridge

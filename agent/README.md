@@ -9,7 +9,7 @@ By default, the node dashboard and detailed status routes require a first-run bo
 1. Build the agent binary from the repo root:
 
 ```sh
-make agent
+uv run wk build agent
 ```
 
 2. On the Pi, create `/etc/wattkeeper/agent.yaml` with placeholder Phase 1 credentials if it does not already exist:
@@ -81,25 +81,25 @@ For UI and API work, you do not need to build and flash a Pi image.
 Run the agent in sample-data mode from WSL or another Linux environment:
 
 ```sh
-make node-dev-ui
+uv run wk dev node-ui
 ```
 
 To override the listen address:
 
 ```sh
-make node-dev-ui NODE_DEV_UI_LISTEN=127.0.0.1:8081
+uv run wk dev node-ui --listen 127.0.0.1:8081
 ```
 
 To disable auth requirements for local UI iteration only:
 
 ```sh
-make node-dev-ui NODE_DEV_UI_FLAGS="--http-auth=false"
+uv run wk dev node-ui-open
 ```
 
 Or use the shorthand target:
 
 ```sh
-make node-dev-ui-open
+uv run wk dev node-ui-open
 ```
 
 To clear local web auth state during development without using the settings page:
