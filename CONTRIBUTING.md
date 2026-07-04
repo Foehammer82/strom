@@ -66,6 +66,7 @@ If you are validating release behavior, prefer an `-rcN` tag first, then promote
 ## Project Links
 
 - [README.md](README.md) for the project overview and current capabilities
+- [docs/](docs) for user-facing setup, feature, FAQ, and reference documentation
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations and reporting guidance
 - [ROADMAP.md](ROADMAP.md) for phase scope and exit criteria
 - [.github/copilot-instructions.md](.github/copilot-instructions.md) for repo-specific Copilot guidance

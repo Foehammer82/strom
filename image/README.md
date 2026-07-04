@@ -30,26 +30,22 @@ make image VERSION=v0.1.0
 That target:
 
 1. cross-compiles the agent with `make agent`
-2. clones the `arm64` pi-gen branch into a temporary workspace without spaces in the path
+2. clones the `bookworm-arm64` pi-gen branch into a temporary workspace without spaces in the path
 3. injects the Wattkeeper custom stage plus the `dist/wattkeeper-agent-linux-arm64` payload and deploy assets
 4. runs `build-docker.sh`
 5. copies the resulting image to `dist/wattkeeper-node-v0.1.0.img.xz`
 
 The target also writes `dist/wattkeeper-node-v0.1.0.img.xz.sha256`.
 
-## Flash Procedure
+## User Documentation
 
-1. Build or download a tagged release image artifact.
-2. Open Raspberry Pi Imager.
-3. Choose `Use custom` and select the `wattkeeper-node-<version>.img.xz` file.
-4. Open the Imager customization dialog and set:
-   - WiFi SSID, password, and regulatory country
-   - at least one SSH public key
-   - the SSH authentication mode Pi Imager exposes for key-based access
-5. Flash the card and boot the Pi Zero 2 W.
-6. Plug in a USB UPS and wait for the node to finish first boot.
+The user-facing flow for building, flashing, and validating a node image now lives in the docs set:
 
-## First-Boot Behavior
+- [docs/getting-started.md](../docs/getting-started.md) for the current build-and-flash path
+- [docs/reference/image.md](../docs/reference/image.md) for image artifacts, compatibility, first-boot behavior, and validation notes
+- [docs/faq.md](../docs/faq.md) for common image and hardware questions
+
+## First-Boot Implementation
 
 The image relies on Raspberry Pi OS first boot for filesystem expansion. Wattkeeper adds a separate oneshot service that:
 

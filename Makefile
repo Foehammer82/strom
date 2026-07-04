@@ -2,8 +2,11 @@ DIST_DIR := dist
 AGENT_BIN := wattkeeper-agent
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 RELEASE_DIR := $(DIST_DIR)/release
+DOCS_VENV := .venv
+DOCS_MKDOCS := $(DOCS_VENV)/bin/mkdocs
+DOCS_STAMP := $(DOCS_VENV)/.docs-installed
 
-.PHONY: agent release-agent test lint image sim-up sim-down
+.PHONY: agent release-agent test lint image docs-setup docs-build docs-serve sim-up sim-down
 
 agent:
 	@mkdir -p $(DIST_DIR)
@@ -36,6 +39,19 @@ lint:
 
 image: agent
 	./image/build.sh "$(VERSION)"
+
+$(DOCS_STAMP): docs/requirements.txt
+	python3 -m venv $(DOCS_VENV)
+	$(DOCS_VENV)/bin/pip install -r docs/requirements.txt
+	@touch $(DOCS_STAMP)
+
+docs-setup: $(DOCS_STAMP)
+
+docs-build: $(DOCS_STAMP)
+	$(DOCS_MKDOCS) build
+
+docs-serve: $(DOCS_STAMP)
+	$(DOCS_MKDOCS) serve
 
 sim-up sim-down:
 	@echo not implemented

@@ -9,6 +9,7 @@ Small Raspberry Pi nodes run NUT near the hardware, automatically detect USB UPS
 This repository now ships the Phase 1 node agent and the Phase 2 flashable image pipeline. The controller and Home Assistant bridge phases are still ahead.
 
 - [ROADMAP.md](ROADMAP.md) defines the architecture, phases, and exit criteria.
+- [docs/](docs) contains the user-facing documentation set, including getting started, features, FAQ, and operational reference material.
 - [.github/copilot-instructions.md](.github/copilot-instructions.md) captures project-specific coding guidance for Copilot sessions in this repo.
 - [.github/prompts/](.github/prompts) contains workspace slash-command prompts for each roadmap phase.
 - [.github/skills/](.github/skills) contains project-specific Copilot skills for agent validation and Pi-node debugging workflows.
@@ -99,30 +100,14 @@ make image VERSION=v0.1.0
 
 Image build prerequisites and the flash workflow are documented in [image/README.md](image/README.md).
 
-## Likely Compatible Pi Models
+The user-facing documentation set lives in [docs/](docs). If you are looking for setup steps, product capabilities, or operational reference material, start there.
 
-The current node image is built as a 64-bit Raspberry Pi OS Lite image for `arm64`, so it is most likely to work on 64-bit-capable Raspberry Pi boards including:
+For the current user-facing path, start with:
 
-- Pi Zero 2 W
-- Pi 3 Model B and B+
-- Pi 4 Model B
-- Pi 5
-- Raspberry Pi 400
-- Compute Module 4
-
-The Pi Zero 2 W is the primary validated target today. Other `arm64` Raspberry Pi models should be good candidates, but they are not yet called out as explicitly hardware-validated in this repo.
-
-Older 32-bit-only boards such as the original Pi Zero W are not expected to work with the current image as built.
-
-## Local Validation
-
-When working on the image pipeline or the Pi provisioning flow, validate locally before pushing:
-
-1. Run `make image VERSION=v0.1.0-rc1` from the repo root and wait for `dist/wattkeeper-node-<version>.img.xz` plus its `.sha256` file.
-2. If a pi-gen run fails after creating the `pigen_work` container and you want to resume the same build state while iterating on the custom stage, rerun with `CONTINUE=1 make image VERSION=v0.1.0-rc1`.
-3. Flash the resulting image with Raspberry Pi Imager, set WiFi and SSH keys in the Imager customization dialog, then boot a Pi Zero 2 W.
-4. Plug in a USB UPS and verify the first-boot path end to end: hostname becomes `wkeeper-node-<last4 serial>`, `/var/lib/wattkeeper` exists, the node advertises `_wattkeeper._tcp`, and `upsc <name>@<pi-ip>` works from another machine.
-5. Treat CI as the release gate, but use the local path for day-to-day iteration so image and first-boot regressions are caught before tagging or pushing.
+- [docs/getting-started.md](docs/getting-started.md) for building, flashing, and validating a node image
+- [docs/features.md](docs/features.md) for what ships today versus what is still planned
+- [docs/faq.md](docs/faq.md) for common operator questions
+- [docs/reference/image.md](docs/reference/image.md) for image artifact, checksum, compatibility, and first-boot reference details
 
 ## Contributing
 

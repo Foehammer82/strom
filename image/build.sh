@@ -15,6 +15,7 @@ QEMU_HINT=''
 BINFMT_HELPER_IMAGE=${BINFMT_HELPER_IMAGE:-tonistiigi/binfmt:latest}
 QEMU_HELPER_IMAGE=${QEMU_HELPER_IMAGE:-multiarch/qemu-user-static:latest}
 PI_GEN_CONTAINER_NAME=${CONTAINER_NAME:-pigen_work}
+KEEP_PI_GEN_CONTAINER=${PRESERVE_CONTAINER:-0}
 
 require_command() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -184,7 +185,7 @@ echo "Running pi-gen Docker build..."
 build_succeeded=1
 if ! (
 	cd "$PI_GEN_DIR"
-	PATH="$QEMU_PATH_PREFIX" WATTKEEPER_STAGE_DIR='stage-wattkeeper' ./build-docker.sh -c "$WORKSPACE_DIR/config"
+	PATH="$QEMU_PATH_PREFIX" CONTAINER_NAME="$PI_GEN_CONTAINER_NAME" PRESERVE_CONTAINER=1 WATTKEEPER_STAGE_DIR='stage-wattkeeper' ./build-docker.sh -c "$WORKSPACE_DIR/config"
 ); then
 	build_succeeded=0
 fi
@@ -194,9 +195,6 @@ if [ "$build_succeeded" -ne 1 ]; then
 	if ! copy_deploy_volume_from_container "$PI_GEN_CONTAINER_NAME" "$PI_GEN_DIR/deploy"; then
 		echo "failed to recover pi-gen deploy artifacts from container $PI_GEN_CONTAINER_NAME" >&2
 		exit 1
-	fi
-	if [ "${PRESERVE_CONTAINER:-0}" != "1" ]; then
-		docker rm -f -v "$PI_GEN_CONTAINER_NAME" >/dev/null 2>&1 || true
 	fi
 fi
 
@@ -211,6 +209,10 @@ install -D -m 0644 "$FOUND_IMAGE" "$IMAGE_OUTPUT"
 	cd "$DIST_DIR"
 	sha256sum "$(basename "$IMAGE_OUTPUT")" > "$(basename "$CHECKSUM_OUTPUT")"
 )
+
+if [ "$KEEP_PI_GEN_CONTAINER" != "1" ]; then
+	docker rm -f -v "$PI_GEN_CONTAINER_NAME" >/dev/null 2>&1 || true
+fi
 
 echo "Image written to $IMAGE_OUTPUT"
 echo "Checksum written to $CHECKSUM_OUTPUT"

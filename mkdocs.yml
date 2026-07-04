@@ -1,0 +1,22 @@
+site_name: Wattkeeper Docs
+site_description: User-facing documentation for Wattkeeper nodes, images, and future controller workflows.
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Features: features.md
+  - FAQ: faq.md
+  - Reference:
+      - Overview: reference/index.md
+      - Agent: reference/agent.md
+      - Image And Flashing: reference/image.md
