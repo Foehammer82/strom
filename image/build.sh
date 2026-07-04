@@ -127,7 +127,7 @@ trap cleanup EXIT INT TERM
 
 PI_GEN_DIR="$WORK_ROOT/pi-gen"
 WORKSPACE_DIR="$WORK_ROOT/workspace"
-STAGE_DIR="$WORKSPACE_DIR/stage-wattkeeper"
+STAGE_DIR="$PI_GEN_DIR/stage-wattkeeper"
 BIN_DIR="$WORK_ROOT/bin"
 
 echo "Cloning pi-gen ($PI_GEN_REF) into temporary build workspace..."
@@ -160,7 +160,7 @@ rm -f "$IMAGE_OUTPUT" "$CHECKSUM_OUTPUT"
 echo "Running pi-gen Docker build..."
 (
 	cd "$PI_GEN_DIR"
-	PATH="$QEMU_PATH_PREFIX" WATTKEEPER_STAGE_DIR='../workspace/stage-wattkeeper' ./build-docker.sh -c "$WORKSPACE_DIR/config"
+	PATH="$QEMU_PATH_PREFIX" WATTKEEPER_STAGE_DIR='stage-wattkeeper' ./build-docker.sh -c "$WORKSPACE_DIR/config"
 )
 
 FOUND_IMAGE=$(find "$PI_GEN_DIR/deploy" -maxdepth 1 -type f -name '*wattkeeper-node*.img.xz' | head -n 1)
