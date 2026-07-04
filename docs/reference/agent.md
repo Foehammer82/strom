@@ -29,6 +29,8 @@ On an uninitialized node with auth enabled, visiting `/` presents a bootstrap pa
 
 To manually reset local web auth on a node, remove `/var/lib/wattkeeper/webui-auth.json` and revisit `/`.
 
+To return an adopted node to pending discovery state, run `sudo wattkeeper-agent reset` and restart the agent service. That clears `/var/lib/wattkeeper/adoption.json` and the node controller API TLS certificate/key so the node advertises `adopted=false` again on the next start.
+
 For local UI and API development away from Pi hardware, run `go run ./agent/cmd/agent --dev-ui --listen :8080` from WSL or another Linux environment. That mode serves sample data and skips hotplug, scanner, and system service integration.
 
 ## Discovery Advertisement
@@ -42,4 +44,4 @@ The node advertises `_wattkeeper._tcp.local` and includes TXT metadata such as:
 
 ## Current Deployment Model
 
-The current deployment model is one node near one or more USB UPS devices on the local network. The controller-side adoption workflow is not yet shipped.
+The current deployment model is one node near one or more USB UPS devices on the local network. The controller can discover and adopt nodes today; controller-side metrics polling, richer fleet UI, and alerting remain in progress.

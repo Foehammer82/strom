@@ -1134,14 +1134,6 @@ type upsSnapshot struct {
 	Variables map[string]string
 }
 
-func (s *Service) queryUPSStatus(ctx context.Context, name string) (string, error) {
-	snapshot, err := s.queryUPSSnapshot(ctx, name)
-	if err != nil {
-		return "", err
-	}
-	return snapshot.Status, nil
-}
-
 func (s *Service) queryUPSSnapshot(ctx context.Context, name string) (upsSnapshot, error) {
 	jsonOutput, jsonErr := s.runner.CombinedOutput(ctx, s.upscPath, "-j", name)
 	if jsonErr == nil {

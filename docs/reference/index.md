@@ -9,4 +9,4 @@ This section collects the current operational reference material for Wattkeeper.
 
 ## Scope
 
-The reference pages describe what exists in the current repository. Planned controller and Home Assistant behavior are intentionally documented at a high level only until those phases ship.
+The reference pages describe what exists in the current repository. Controller behavior now ships in the repo; the Home Assistant bridge remains intentionally documented at a high level until Phase 4.

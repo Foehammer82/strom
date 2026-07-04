@@ -65,6 +65,15 @@ On a fresh node, the first browser visit to `/` prompts for local admin creation
 
 The settings page lets the local admin sign out, reset node-local web auth, and toggle the local dashboard on or off. That toggle is the current node-side hook for the future controller-managed UI policy.
 
+To return an adopted node to pending discovery state for re-adoption, stop the service and run:
+
+```sh
+sudo wattkeeper-agent reset
+sudo systemctl restart wattkeeper-agent
+```
+
+That removes `/var/lib/wattkeeper/adoption.json` and the node controller API TLS material. On the next start, the agent advertises `adopted=false` again and rewrites runtime NUT credentials from `/etc/wattkeeper/agent.yaml`.
+
 ## Local UI/API Development
 
 For UI and API work, you do not need to build and flash a Pi image.

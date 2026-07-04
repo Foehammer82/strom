@@ -12,13 +12,13 @@ Today that means:
 
 - Raspberry Pi nodes auto-detect USB UPS hardware, generate NUT configuration, advertise themselves over mDNS, and expose a branded local dashboard with live telemetry and UPS control actions.
 - The image pipeline builds a flashable Raspberry Pi OS Lite image for node deployment.
-- The controller can discover nodes, persist them in SQLite, adopt pending nodes, establish node-local trust material, and serve a branded fleet shell.
+- The controller can discover nodes, persist them in SQLite, adopt pending nodes, forget stale node records, store controller-managed node display/location metadata, establish node-local trust material, poll adopted-node NUT variables into SQLite, expose recent UPS telemetry plus per-UPS detail/history APIs and trusted controller-side UPS commands, evaluate webhook alert rules, and serve a branded React controller GUI. Adopted nodes can be returned to pending state with `wattkeeper-agent reset` on the node.
 
 What is still ahead:
 
-- Controller-side NUT polling/history retention
-- The fuller controller fleet/per-UPS UI described in the roadmap
-- Alerting and the Home Assistant bridge
+- Phase 3 hardware validation against the real-node exit criteria
+- The Home Assistant bridge
+- Later lifecycle and hardening work from the roadmap
 
 - [ROADMAP.md](ROADMAP.md) defines the architecture, phases, and exit criteria.
 - [docs/](docs) contains the user-facing documentation set, including getting started, features, FAQ, and operational reference material.
@@ -55,8 +55,8 @@ wattkeeper/
 │       ├── nutconf/            # nut-scanner parsing + ups.conf generation
 │       ├── discovery/          # mDNS advertisement
 │       └── api/                # local HTTP API
-├── controller/                 # Go backend + current fleet shell (Phase 3)
-│   ├── cmd/controller/         # controller entrypoint + embedded web shell
+├── controller/                 # Go backend + React controller GUI (Phase 3)
+│   ├── cmd/controller/         # controller entrypoint + embedded frontend assets
 │   └── internal/               # browse, CA, registry, secure store
 ├── image/                      # pi-gen based SD card image build
 │   ├── stage-wattkeeper/       # custom pi-gen stage
@@ -77,9 +77,10 @@ Work is intended to follow the roadmap phase by phase rather than building the f
 - [ ] Phase 3: add the controller, adoption flow, and fleet UI
 - [ ] Phase 4: add the Home Assistant bridge
 
-Phase 3 is currently in progress: discovery, adoption, controller packaging,
-and the first fleet shell are implemented, but polling/history/alerts and the
-full controller UI remain unfinished.
+Phase 3 implementation is now present in the repository: discovery, adoption,
+controller packaging, polling/history, alerting, and the React controller GUI.
+The remaining Phase 3 risk is hardware validation against the roadmap exit
+criteria.
 
 When implementing code in this repository:
 

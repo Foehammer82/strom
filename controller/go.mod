@@ -3,6 +3,7 @@ module github.com/Foehammer82/wattkeeper/controller
 go 1.26.0
 
 require (
+	github.com/eclipse/paho.golang v0.23.0
 	github.com/grandcat/zeroconf v1.0.0
 	modernc.org/sqlite v1.39.0
 )

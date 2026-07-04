@@ -2,7 +2,7 @@
 
 ## Is Wattkeeper ready for end users?
 
-Not fully. The node agent and flashable image path exist today, but the controller, fleet UI, and Home Assistant bridge are still planned.
+Not fully. The node agent, flashable image path, and controller GUI exist today, but the project still needs broader hardware validation and the Home Assistant bridge remains future work.
 
 ## Is the Raspberry Pi image an ISO?
 

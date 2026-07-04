@@ -17,8 +17,9 @@ Today the repository ships:
 
 - a Phase 1 node agent that discovers USB UPS devices, renders NUT configuration, manages related services, and exposes a local health endpoint
 - a Phase 2 Raspberry Pi image pipeline that produces a flashable `.img.xz` artifact for node deployment
+- a Phase 3 controller that discovers and adopts nodes, polls UPS telemetry, evaluates webhook alerts, and serves a GUI-driven fleet interface
 
-The controller, adoption workflow, fleet UI, and Home Assistant bridge are still planned work.
+The Home Assistant bridge and later lifecycle hardening phases remain planned work.
 
 ## Documentation Scope
 

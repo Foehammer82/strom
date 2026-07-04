@@ -44,7 +44,7 @@ This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making no
 - When release automation or packaging changes, preserve the current version injection and tag-driven workflow behavior in the `Makefile` and `.github/workflows/` files unless the task explicitly changes the release strategy.
 - When asked to help with releases, default to the safe sequence: verify the target commit is merged and green, cut an annotated `-rcN` tag first when validating automation, then cut a stable SemVer tag only after the prerelease result is acceptable.
 - For Go code, keep APIs small, use clear package boundaries under `internal/`, and avoid speculative abstractions for later phases.
-- For frontend work introduced in later phases, preserve a minimal dependency footprint and keep the UI directly aligned with the controller API and roadmap milestones.
+- For frontend work, treat the controller as a full React + TypeScript GUI app and keep it directly aligned with the controller API, roadmap milestones, and the shared Wattkeeper visual language already established by the node UI.
 
 ## What to avoid
 

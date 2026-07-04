@@ -98,4 +98,13 @@ After boot:
 
 ## What Comes Next
 
-Today, Wattkeeper is node-first. There is not yet a shipped controller UI or adoption flow. The current value is automatic local UPS discovery and a flashable node image.
+Today, Wattkeeper is no longer node-only. After validating the node image, you can run the controller to discover and adopt nodes, review fleet telemetry, and manage alerts through the controller GUI.
+
+For local controller development from the repo root:
+
+```sh
+make controller-web
+make controller-dev
+```
+
+Then open `http://127.0.0.1:9000/` to reach the controller interface.

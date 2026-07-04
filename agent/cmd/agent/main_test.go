@@ -15,6 +15,7 @@ import (
 	"github.com/Foehammer82/wattkeeper/agent/internal/hotplug"
 	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
 	"github.com/Foehammer82/wattkeeper/agent/internal/services"
+	"github.com/Foehammer82/wattkeeper/agent/nodeapi"
 )
 
 func TestRuntimeLoopWritesConfigsAndSkipsReloadWhenUnchanged(t *testing.T) {
@@ -111,20 +112,20 @@ func TestRuntimeAdopterWritesStateAndReloadsServices(t *testing.T) {
 	runner := &scriptedRunner{}
 	inventory := &fakeInventorySink{}
 	adopted := &fakeAdoptedSink{}
-	adopter := &runtimeAdopter{
-		configDir:    configDir,
-		adoptionPath: adoptionPath,
-		reloader:     &services.Manager{Runner: runner},
-		inventory:    inventory,
-		advertiser:   adopted,
-		version:      "v0.3.0",
-		serial:       "serial-1234",
-		tlsPort:      8443,
-		tlsCertPath:  filepath.Join(t.TempDir(), "node-api.crt"),
-		tlsKeyPath:   filepath.Join(t.TempDir(), "node-api.key"),
+	adopter := &nodeapi.RuntimeAdopter{
+		ConfigDir:    configDir,
+		AdoptionPath: adoptionPath,
+		Reloader:     &services.Manager{Runner: runner},
+		Inventory:    inventory,
+		Advertiser:   adopted,
+		Version:      "v0.3.0",
+		Serial:       "serial-1234",
+		TLSPort:      8443,
+		TLSCertPath:  filepath.Join(t.TempDir(), "node-api.crt"),
+		TLSKeyPath:   filepath.Join(t.TempDir(), "node-api.key"),
 	}
 
-	response, err := adopter.ApplyAdoption(context.Background(), api.AdoptRequest{
+	response, err := adopter.ApplyAdoption(context.Background(), nodeapi.AdoptRequest{
 		CAPEM:         "pem-data",
 		NUTUser:       "controller",
 		NUTPassword:   "secret",
@@ -158,10 +159,10 @@ func TestRuntimeAdopterWritesStateAndReloadsServices(t *testing.T) {
 	if state.TLSPort != 8443 || state.TLSFingerprint == "" {
 		t.Fatalf("state TLS metadata = %#v, want port and fingerprint", state)
 	}
-	if _, err := os.Stat(adopter.tlsCertPath); err != nil {
+	if _, err := os.Stat(adopter.TLSCertPath); err != nil {
 		t.Fatalf("TLS cert missing: %v", err)
 	}
-	if _, err := os.Stat(adopter.tlsKeyPath); err != nil {
+	if _, err := os.Stat(adopter.TLSKeyPath); err != nil {
 		t.Fatalf("TLS key missing: %v", err)
 	}
 	if len(runner.Commands()) == 0 || runner.Commands()[0] != "systemctl reload-or-restart nut-server.service" {
@@ -172,6 +173,57 @@ func TestRuntimeAdopterWritesStateAndReloadsServices(t *testing.T) {
 	}
 	if got := adopted.values(); len(got) != 1 || !got[0] {
 		t.Fatalf("adopted updates = %v, want [true]", got)
+	}
+}
+
+func TestRuntimeAdopterRejectsSecondAdoption(t *testing.T) {
+	t.Parallel()
+
+	adoptionPath := filepath.Join(t.TempDir(), "adoption.json")
+	if err := os.WriteFile(adoptionPath, []byte(`{"token_sha256":"existing"}`), 0o600); err != nil {
+		t.Fatalf("write adoption state: %v", err)
+	}
+	adopter := &nodeapi.RuntimeAdopter{
+		AdoptionPath: adoptionPath,
+		Serial:       "serial-1234",
+	}
+
+	_, err := adopter.ApplyAdoption(context.Background(), nodeapi.AdoptRequest{
+		CAPEM:         "pem-data",
+		NUTUser:       "controller",
+		NUTPassword:   "secret",
+		APIToken:      "token-123",
+		ControllerURL: "https://controller.local",
+	})
+	if !errors.Is(err, nodeapi.ErrNodeAlreadyAdopted) {
+		t.Fatalf("ApplyAdoption() error = %v, want ErrNodeAlreadyAdopted", err)
+	}
+}
+
+func TestResetNodeStateRemovesAdoptionAndTLSMaterial(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	adoptionPath := filepath.Join(tempDir, "adoption.json")
+	tlsCertPath := filepath.Join(tempDir, "node-api.crt")
+	tlsKeyPath := filepath.Join(tempDir, "node-api.key")
+	for _, path := range []string{adoptionPath, tlsCertPath, tlsKeyPath} {
+		if err := os.WriteFile(path, []byte("present"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	if err := resetNodeState(adoptionPath, tlsCertPath, tlsKeyPath); err != nil {
+		t.Fatalf("resetNodeState() error = %v", err)
+	}
+	for _, path := range []string{adoptionPath, tlsCertPath, tlsKeyPath} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("stat %s error = %v, want not exists", path, err)
+		}
+	}
+
+	if err := resetNodeState(adoptionPath, tlsCertPath, tlsKeyPath); err != nil {
+		t.Fatalf("resetNodeState() second call error = %v", err)
 	}
 }
 

@@ -10,7 +10,7 @@ NODE_DEV_UI_FLAGS ?=
 CONTROLLER_IMAGE ?= wattkeeper-controller:$(VERSION)
 CONTROLLER_IMAGE_GHCR ?= ghcr.io/foehammer82/wattkeeper-controller:$(VERSION)
 
-.PHONY: agent controller release-agent test lint image docs-setup docs-build docs-serve node-dev-ui node-dev-ui-open controller-dev controller-image controller-image-multiarch sim-up sim-down
+.PHONY: agent controller release-agent test lint image docs-setup docs-build docs-serve node-dev-ui node-dev-ui-open controller-dev controller-web controller-web-install controller-image controller-image-multiarch sim-up sim-down
 
 agent:
 	@mkdir -p $(DIST_DIR)
@@ -19,10 +19,20 @@ agent:
 
 controller:
 	@mkdir -p $(DIST_DIR)
+	$(MAKE) controller-web
 	go build -ldflags "-X main.version=$(VERSION)" -o $(DIST_DIR)/$(CONTROLLER_BIN) ./controller/cmd/controller
 
 controller-dev:
 	go run ./controller/cmd/controller --data-dir ./controller/dist/data --listen :9000
+
+controller-web-install:
+	cd controller/web && npm install
+
+controller-web:
+	cd controller/web && npm run build
+	rm -rf controller/cmd/controller/assets
+	mkdir -p controller/cmd/controller/assets
+	cp -R controller/web/dist/. controller/cmd/controller/assets/
 
 release-agent: agent
 	@rm -rf $(RELEASE_DIR)

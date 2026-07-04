@@ -25,14 +25,17 @@ This page separates what Wattkeeper ships today from what is still planned.
 - supports Raspberry Pi Imager WiFi and SSH customization
 - runs a first-boot service to set the node hostname and create runtime state
 
-## Planned Features
-
 ### Controller
 
-- fleet discovery and adoption
-- SQLite-backed node registry
-- live UPS metrics collection
-- web UI for fleet management and health
+- discovers pending and adopted nodes over mDNS
+- adopts nodes with pinned TLS trust and encrypted stored credentials
+- persists node metadata such as display name and location labels
+- polls adopted-node NUT telemetry into SQLite on an interval
+- exposes recent UPS summaries, per-UPS detail/history APIs, and trusted instant commands
+- evaluates webhook alert rules for on-battery, low-battery, node-offline, and comms-lost conditions
+- serves a GUI-driven React fleet interface with fleet, node, UPS, and alerts views
+
+## Planned Features
 
 ### Home Assistant Bridge
 
@@ -55,7 +58,6 @@ This page separates what Wattkeeper ships today from what is still planned.
 
 ## Current Limitations
 
-- there is no shipped controller application yet
-- there is no central controller web UI yet
 - Home Assistant integration is not yet available
-- multi-node management is still future work
+- Phase 3 still needs real-hardware validation against its exit criteria
+- MQTT alert delivery is deferred to the Home Assistant bridge phase

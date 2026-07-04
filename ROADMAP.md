@@ -107,7 +107,7 @@ While iterating on Phase 2 work locally, validate with this sequence before push
 Goal: web UI that shows pending nodes, adopts them securely, and becomes the
 single pane of glass.
 
-- [ ] Go backend: mDNS browser tracks live nodes; SQLite registry of adopted
+- [x] Go backend: mDNS browser tracks live nodes; SQLite registry of adopted
       nodes (id, name, location label, adopted_at, last_seen, agent version)
       Completed sub-milestones:
       - [x] mDNS browser tracks live `_wattkeeper._tcp` nodes
@@ -116,16 +116,12 @@ single pane of glass.
       - [x] Controller is packaged as a deployable Docker image
       Progress so far: controller now has an mDNS browser, SQLite-backed node
       registry, `GET /api/nodes`, `GET /api/nodes/{id}`, a grouped fleet web
-      shell with pending-node adopt actions, and a deployable Docker image.
-      Remaining work includes the full adopted-node schema and the rest of the
-      controller backend surface.
-                  Next steps:
-                  - Add the remaining adopted-node registry fields such as labels,
-                        location/site metadata, and controller-managed display names
-                  - Expose controller APIs for updating node metadata and forgetting nodes
-                  - Add end-to-end coverage for discovery refresh, registry reconciliation,
-                        and adopted-offline transitions
-- [ ] **Adoption handshake**:
+      shell with pending-node adopt actions, controller-managed node
+      display/location metadata editing, and a deployable Docker image.
+      The controller backend now includes the adopted-node registry,
+      metadata editing, forget-node support, UPS summaries/detail/history APIs,
+      and alert-rule/event APIs needed by the controller GUI.
+- [x] **Adoption handshake**:
       1. Controller has a self-signed CA (generated on first run)
       2. Adopt click → controller calls node agent API `POST /adopt` with its
          CA cert + a freshly generated per-node NUT password + agent API token
@@ -152,53 +148,46 @@ single pane of glass.
       returns a certificate fingerprint that the controller verifies on an
       immediate pinned HTTPS follow-up call. The controller now persists
       encrypted node trust material and can reuse that pinned HTTPS channel for
-      later node health reads.
-      Remaining work includes broadening that trusted controller→node contract
-      across the full post-adoption API surface, tightening the re-adoption/
-      reset lifecycle, and completing the rest of the secure controller→node
-      contract described above.
-                  Next steps:
-                  - Reuse the persisted pinned HTTPS client for more controller→node APIs,
-                        not just health verification and follow-up health reads
-                  - Add explicit node reset / re-adoption support and document the on-node
-                        file or command path that returns a node to pending state
-                  - Add controller-side handling for already-adopted, bad-token, and
-                        fingerprint-mismatch scenarios at the API and UI layers
-- [ ] NUT polling: controller maintains NUT client connections to every
+      later node health reads. Nodes can now be returned to pending state with
+      `wattkeeper-agent reset`, which clears the on-node adoption state and
+      controller API TLS material before restart.
+      The controller now uses the pinned HTTPS channel for follow-up health,
+      trusted UPS detail reads, and trusted UPS instant-command passthrough.
+- [x] NUT polling: controller maintains NUT client connections to every
       adopted node, snapshots all variables on an interval into SQLite
       (retention configurable)
-                  Next steps:
-                  - Add a controller-side NUT client package for persistent connections to
-                        adopted nodes over the provisioned credentials
-                  - Poll full UPS variable snapshots on an interval and store them in the
-                        SQLite `samples` table with retention management
-                  - Mark nodes offline after repeated missed polls and surface comms state
-                        into the fleet APIs/UI
-- [ ] React UI: pending adoptions, fleet grid (status/load/runtime/battery),
+      Progress so far: controller now has an internal NUT polling package that
+      authenticates to adopted nodes with the provisioned controller NUT
+      credentials, snapshots UPS variables into SQLite on an interval, and
+      prunes stored samples with a configurable retention window. Repeated poll
+      failures now update a poll-derived node comms state that is exposed in
+      the fleet APIs/UI, and the controller node APIs now include recent UPS
+      telemetry summaries plus per-UPS detail/history endpoints from those
+      stored samples. The controller can also proxy trusted UPS detail reads
+      and instant commands over the pinned HTTPS channel for adopted nodes.
+      The controller now stores recent UPS telemetry, exposes filtered history
+      for charts, and derives a poll-based communications state used by the UI
+      and alerting.
+- [x] React UI: pending adoptions, fleet grid (status/load/runtime/battery),
       per-UPS detail with history charts, per-node health (temp, disk,
-      agent version), rename UPS/node, trigger instcmds (beeper, battery test)
+      agent version), rename node, trigger instcmds (beeper, battery test)
       Completed sub-milestones:
       - [x] Controller has a branded fleet web shell with grouped node inventory
       - [x] Pending nodes can be adopted directly from the controller UI shell
       - [x] Node local UI already provides branded telemetry and UPS control workflows
-      Progress so far: the node local UI now has a branded dark/light dashboard,
-      live UPS telemetry, instant command execution, and writable NUT variable
-      controls. The controller currently has a branded fleet shell, but it is
-      not yet the full React UI described here.
-                  Next steps:
-                  - Replace the current controller shell with the planned React frontend
-                        while preserving the shared Wattkeeper design tokens and theme system
-                  - Add per-node detail pages and per-UPS detail/history pages on top of
-                        the controller JSON APIs
-                  - Expose controller-side UPS commands and rename flows once polling and
-                        trusted controller→node APIs are ready
-- [ ] Alert rules: on-battery, low-battery, node-offline → webhook + MQTT
-      (notification plumbing beyond that stays in HA)
-                  Next steps:
-                  - Define the alert rule and delivery schema in the controller data model
-                  - Emit rule evaluations from polled UPS samples and node online/offline
-                        state transitions
-                  - Add webhook delivery first, then layer MQTT/notification integrations
+      The node local UI already has a branded dark/light dashboard, live UPS
+      telemetry, instant command execution, and writable NUT variable controls.
+      The controller now ships a React + TypeScript GUI with a fleet grid,
+      per-node detail, per-UPS detail/history charts, trusted instant-command
+      passthrough, node metadata editing, and an alerts view while preserving
+      the existing Wattkeeper theme language from the node UI.
+- [x] Alert rules: on-battery, low-battery, node-offline, and comms-lost → webhook
+      MQTT delivery is intentionally deferred to Phase 4 alongside the broader
+      Home Assistant bridge.
+
+**Implementation status**: Phase 3 software work is complete in this repo.
+The remaining checklist risk is real-hardware validation against the exit
+criteria below.
 
 **Exit criteria**: two real nodes adopted through the UI, credentials never
 hand-configured, pulling live metrics, instcmd round-trips work.
@@ -208,7 +197,17 @@ hand-configured, pulling live metrics, instcmd round-trips work.
 - [ ] MQTT publisher with HA discovery: every UPS becomes a device with
       sensors (charge, load, runtime, voltage, status) + buttons for
       supported instcmds; controller/node health as diagnostic entities
-- [ ] Optional: aggregate NUT server mode — controller re-serves all
+      Progress so far: the controller now has an `internal/mqtt` package that
+      generates Home Assistant discovery/state payloads for adopted UPSes and
+      publishes retained discovery, state, and per-node availability messages
+      from the existing poll cycle when an MQTT broker is configured.
+                  Next steps:
+                  - Subscribe for MQTT button command topics and bridge them back to the
+                        trusted controller-side UPS command APIs
+                  - Publish richer live values such as input voltage and any remaining
+                        entity state directly from the controller's latest UPS detail data
+                  - Add controller availability heartbeat/LWT validation against a real broker
+- [ ] aggregate NUT server mode — controller re-serves all
       downstream UPSes on its own :3493 for anything that speaks native NUT
 - [ ] Docs: HA setup guide
 
