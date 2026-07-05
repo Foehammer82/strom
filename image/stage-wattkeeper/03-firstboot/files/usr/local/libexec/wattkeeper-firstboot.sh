@@ -1,6 +1,16 @@
 #!/bin/sh
 set -eu
 
+overlay_opt_out=''
+for marker in /boot/firmware/wattkeeper-overlayfs-disable /boot/wattkeeper-overlayfs-disable; do
+	if [ -f "$marker" ]; then
+		overlay_opt_out="$marker"
+		break
+	fi
+done
+
+install -d -m 0755 /var/lib/wattkeeper
+
 serial=''
 if [ -r /sys/firmware/devicetree/base/serial-number ]; then
 	serial=$(tr -d '\000' < /sys/firmware/devicetree/base/serial-number || true)
@@ -36,7 +46,21 @@ else
 	printf '127.0.1.1\t%s\n' "$hostname" >> /etc/hosts
 fi
 
-install -d -m 0755 /var/lib/wattkeeper
+# Enable Raspberry Pi OverlayFS by default to reduce SD card wear from steady writes.
+# Place /boot/firmware/wattkeeper-overlayfs-disable before first boot to opt out.
+if [ ! -f /var/lib/wattkeeper/.overlayfs-enabled ] && [ -z "$overlay_opt_out" ] && command -v raspi-config >/dev/null 2>&1; then
+	if raspi-config nonint do_overlayfs 0 >/dev/null 2>&1; then
+		touch /var/lib/wattkeeper/.overlayfs-enabled
+		sync
+		if systemctl --no-block reboot >/dev/null 2>&1; then
+			exit 0
+		fi
+		if reboot >/dev/null 2>&1; then
+			exit 0
+		fi
+	fi
+fi
+
 touch /var/lib/wattkeeper/.firstboot-complete
 
 systemctl disable wattkeeper-firstboot.service >/dev/null 2>&1 || true

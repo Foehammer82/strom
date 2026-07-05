@@ -57,6 +57,10 @@ The image relies on Raspberry Pi OS first boot for filesystem expansion. Wattkee
 
 This service does not replace or overwrite Raspberry Pi Imager's boot partition customization flow. WiFi settings, SSH key injection, and other standard Imager data still flow through the usual `firstrun.sh` handling provided by Raspberry Pi OS.
 
+The first-boot script also enables Raspberry Pi OverlayFS by default through `raspi-config nonint do_overlayfs 0` and triggers a one-time reboot when that change is applied. This gives nodes a read-mostly root filesystem that is more resilient to SD card wear.
+
+If you need writable-root behavior for a particular deployment, create `wattkeeper-overlayfs-disable` on the boot partition before first boot (for example `/boot/firmware/wattkeeper-overlayfs-disable` once mounted on Linux).
+
 ## Security Constraints
 
 - No WiFi credentials are baked into the image.
