@@ -34,6 +34,10 @@ site/
 .venv/
 *.egg-info/
 
+# Python build/cache artifacts
+__pycache__/
+*.pyc
+
 # Generated archives and image artifacts
 *.img
 *.img.xz
