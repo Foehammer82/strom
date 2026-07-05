@@ -10,6 +10,8 @@ services:
       AGENT_SIM_DIR: /sim/dummy-ups
       AGENT_DEMO_MODE: "true"
       AGENT_HTTP_AUTH: "false"
+    ports:
+      - "127.0.0.1:18080-18179:80"
     volumes:
       - ./dummy-ups:/sim/dummy-ups
     restart: unless-stopped
