@@ -36,6 +36,8 @@ const (
 	defaultAdoptionPath    = "/var/lib/wattkeeper/adoption.json"
 	defaultTLSCertPath     = "/var/lib/wattkeeper/node-api.crt"
 	defaultTLSKeyPath      = "/var/lib/wattkeeper/node-api.key"
+	factoryResetMarkerPath = "/boot/firmware/wattkeeper-factory-reset"
+	factoryResetLegacyPath = "/boot/wattkeeper-factory-reset"
 )
 
 var version = "dev"
@@ -215,6 +217,10 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 		return runDevUI(ctx, logger, cfg)
 	}
 
+	if _, err := applyFactoryResetIfRequested(logger, []string{factoryResetMarkerPath, factoryResetLegacyPath}, factoryResetStatePaths(cfg.authPath)); err != nil {
+		return fmt.Errorf("apply factory reset: %w", err)
+	}
+
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -348,6 +354,59 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 	}
 
 	return result
+}
+
+func factoryResetStatePaths(authPath string) []string {
+	paths := []string{defaultAdoptionPath, defaultTLSCertPath, defaultTLSKeyPath, defaultNamesPath}
+	if strings.TrimSpace(authPath) != "" {
+		paths = append(paths, authPath)
+	}
+	return paths
+}
+
+func applyFactoryResetIfRequested(logger *log.Logger, markerPaths []string, statePaths []string) (bool, error) {
+	markerPath, found, err := firstExistingRegularFile(markerPaths)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+
+	if err := resetNodeState(statePaths...); err != nil {
+		return false, err
+	}
+	if err := os.Remove(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if logger != nil {
+			logger.Printf("warning: factory reset marker cleanup failed path=%s err=%v", markerPath, err)
+		}
+	}
+	if logger != nil {
+		logger.Printf("factory reset applied marker=%s", markerPath)
+	}
+
+	return true, nil
+}
+
+func firstExistingRegularFile(paths []string) (string, bool, error) {
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		info, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("stat %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		return path, true, nil
+	}
+
+	return "", false, nil
 }
 
 type sampleRunner struct {

@@ -63,7 +63,19 @@ The public status response should stay minimal: overall node status and UPS coun
 
 On a fresh node, the first browser visit to `/` prompts for local admin creation. After that, `/`, `/status/details`, `/healthz`, and `/settings` use a session cookie set by the sign-in flow unless the process is explicitly started with `--http-auth=false`.
 
-The settings page lets the local admin sign out, reset node-local web auth, and toggle the local dashboard on or off. That toggle is the current node-side hook for the future controller-managed UI policy.
+Node-local auth contract:
+
+- Browser HTML form flows (`/auth/bootstrap`, `/auth/login`, `/auth/logout`, `/auth/reset`, `/settings/ui`) require a CSRF token (`csrf_token` form field or `X-CSRF-Token` header).
+- JSON API clients can bootstrap/login with `Content-Type: application/json` and then use the returned `wattkeeper_session` cookie for authenticated endpoints (`/status/details`, `/healthz`, and protected `/api/*` routes).
+- Session cookies expire after the configured session TTL (12h by default), and successful bootstrap/login rotates any existing session token.
+- When requests arrive over TLS (or `X-Forwarded-Proto: https`), auth and CSRF cookies are emitted with `Secure` in addition to `HttpOnly` and `SameSite=Strict`.
+
+The settings page lets the local admin sign out, reset node-local web auth, and toggle the local dashboard on or off.
+
+For adopted nodes, the controller uses the same node-side policy surface (`POST /api/settings/ui/policy`) to manage local UI availability. When the controller has policy management enabled, node-local UI toggles are blocked in settings; when the controller releases policy, the node returns to local admin control. Local reset paths are:
+
+- reset node-local web auth from the settings page (or by removing `/var/lib/wattkeeper/webui-auth.json`) to clear local auth/session state on that node
+- run `wattkeeper-agent reset` to return an adopted node to pending state and clear controller adoption material
 
 To return an adopted node to pending discovery state for re-adoption, stop the service and run:
 
@@ -73,6 +85,8 @@ sudo systemctl restart wattkeeper-agent
 ```
 
 That removes `/var/lib/wattkeeper/adoption.json` and the node controller API TLS material. On the next start, the agent advertises `adopted=false` again and rewrites runtime NUT credentials from `/etc/wattkeeper/agent.yaml`.
+
+For offline field recovery, you can also create `/boot/firmware/wattkeeper-factory-reset` (or `/boot/wattkeeper-factory-reset` on older layouts) before boot. The agent consumes that marker at startup and clears adoption/TLS material, local auth state, and persisted UPS naming state, returning the node to first-run bootstrap plus pending adoption.
 
 ## Local UI/API Development
 
@@ -95,6 +109,10 @@ To disable auth requirements for local UI iteration only:
 ```sh
 uv run wk dev node-ui-open
 ```
+
+Container note: the agent entrypoint defaults to `AGENT_HTTP_AUTH=true`.
+Set `AGENT_HTTP_AUTH=false` only for explicit local development or simulation
+scenarios.
 
 Or use the shorthand target:
 

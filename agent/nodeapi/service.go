@@ -37,6 +37,7 @@ type Options struct {
 	AdoptionPath string
 	DisableAuth  bool
 	AuthPath     string
+	AgentBinary  string
 	NUTUser      string
 	NUTPassword  string
 	Adopter      Adopter
@@ -56,6 +57,7 @@ func New(logger *log.Logger, opts Options) *Service {
 		AdoptionPath: opts.AdoptionPath,
 		DisableAuth:  opts.DisableAuth,
 		AuthPath:     opts.AuthPath,
+		AgentBinary:  opts.AgentBinary,
 		NUTUser:      opts.NUTUser,
 		NUTPassword:  opts.NUTPassword,
 		Adopter:      opts.Adopter,

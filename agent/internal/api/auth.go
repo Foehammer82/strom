@@ -28,6 +28,7 @@ var (
 	errAuthNotConfigured     = errors.New("node web auth not initialized")
 	errAuthAlreadyConfigured = errors.New("node web auth already initialized")
 	errInvalidCredentials    = errors.New("invalid credentials")
+	errUIPolicyManaged       = errors.New("local UI is controller-managed")
 )
 
 type authManager struct {
@@ -45,10 +46,12 @@ type storedAuth struct {
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
 	UIEnabled    *bool     `json:"ui_enabled,omitempty"`
+	UIManaged    *bool     `json:"ui_managed,omitempty"`
 }
 
 type authSession struct {
 	Username  string
+	CSRFToken string
 	ExpiresAt time.Time
 }
 
@@ -64,19 +67,23 @@ type loginRequest struct {
 }
 
 type bootstrapViewModel struct {
-	Error string
+	Error     string
+	CSRFToken string
 }
 
 type loginViewModel struct {
 	Error      string
 	UIDisabled bool
+	CSRFToken  string
 }
 
 type settingsViewModel struct {
 	Username  string
 	UIEnabled bool
+	UIManaged bool
 	Error     string
 	Message   string
+	CSRFToken string
 }
 
 var bootstrapTemplate = template.Must(template.New("bootstrap").Parse(`<!DOCTYPE html>
@@ -105,6 +112,7 @@ var bootstrapTemplate = template.Must(template.New("bootstrap").Parse(`<!DOCTYPE
     <p>The first browser user creates the local admin account for this node. Public status remains available at <strong>/status</strong>.</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     <form method="post" action="/auth/bootstrap">
+			<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <label for="username">Username</label>
       <input id="username" name="username" type="text" autocomplete="username" required>
       <label for="password">Password</label>
@@ -144,6 +152,7 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
     <p>{{if .UIDisabled}}The local node dashboard is currently disabled. You can still sign in to review settings.{{else}}Sign in to reach the node dashboard and detailed status routes.{{end}}</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     <form method="post" action="/auth/login">
+			<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <label for="username">Username</label>
       <input id="username" name="username" type="text" autocomplete="username" required>
       <label for="password">Password</label>
@@ -190,20 +199,23 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
       {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
 
       <h2>Local UI</h2>
-      <p>Current state: <strong>{{if .UIEnabled}}enabled{{else}}disabled{{end}}</strong>. This only affects the local dashboard surface and is the future controller-managed toggle point.</p>
+			<p>Current state: <strong>{{if .UIEnabled}}enabled{{else}}disabled{{end}}</strong>. {{if .UIManaged}}This setting is currently managed by the controller for adopted operation.{{else}}This only affects the local dashboard surface and is the future controller-managed toggle point.{{end}}</p>
       <form method="post" action="/settings/ui">
+				<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="enabled" value="{{if .UIEnabled}}false{{else}}true{{end}}">
-        <button type="submit">{{if .UIEnabled}}Disable local UI{{else}}Enable local UI{{end}}</button>
+				<button type="submit" {{if .UIManaged}}disabled{{end}}>{{if .UIEnabled}}Disable local UI{{else}}Enable local UI{{end}}</button>
       </form>
 
       <h2>Session</h2>
       <form method="post" action="/auth/logout">
+				<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button type="submit">Sign out</button>
       </form>
 
       <h2>Reset</h2>
       <p>Resetting clears the local admin account and all current sessions, then returns this node to first-run bootstrap.</p>
       <form method="post" action="/auth/reset">
+				<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button class="danger" type="submit">Reset local web auth</button>
       </form>
     </div>
@@ -253,37 +265,48 @@ func (a *authManager) Authenticate(username, password string) error {
 	return nil
 }
 
-func (a *authManager) CreateSession(username string) (string, error) {
+func (a *authManager) CreateSession(username string) (string, string, error) {
 	if !a.Enabled() {
-		return "", errAuthDisabled
+		return "", "", errAuthDisabled
 	}
 	token, err := randomToken(32)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	csrfToken, err := randomToken(24)
+	if err != nil {
+		return "", "", err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cleanupExpiredSessionsLocked(time.Now().UTC())
-	a.sessions[token] = authSession{Username: username, ExpiresAt: time.Now().UTC().Add(a.sessionTTL)}
-	return token, nil
+	a.sessions[token] = authSession{Username: username, CSRFToken: csrfToken, ExpiresAt: time.Now().UTC().Add(a.sessionTTL)}
+	return token, csrfToken, nil
 }
 
 func (a *authManager) SessionUsername(r *http.Request) (string, error) {
 	if !a.Enabled() {
 		return "", nil
 	}
-	cookie, err := r.Cookie(sessionCookieName)
+	session, err := a.sessionFromRequest(r)
 	if err != nil {
 		return "", errInvalidCredentials
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.cleanupExpiredSessionsLocked(time.Now().UTC())
-	session, ok := a.sessions[cookie.Value]
-	if !ok {
+	return session.Username, nil
+}
+
+func (a *authManager) SessionCSRFToken(r *http.Request) (string, error) {
+	if !a.Enabled() {
+		return "", nil
+	}
+	session, err := a.sessionFromRequest(r)
+	if err != nil {
 		return "", errInvalidCredentials
 	}
-	return session.Username, nil
+	if strings.TrimSpace(session.CSRFToken) == "" {
+		return "", errInvalidCredentials
+	}
+	return session.CSRFToken, nil
 }
 
 func (a *authManager) ClearSession(token string) {
@@ -334,8 +357,31 @@ func (a *authManager) SetUIEnabled(enabled bool) error {
 	if err != nil {
 		return err
 	}
+	if stored.isUIManaged() {
+		return errUIPolicyManaged
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	stored.UIEnabled = &enabled
+	return a.saveLocked(stored)
+}
+
+func (a *authManager) UIManaged() (bool, error) {
+	stored, err := a.load()
+	if err != nil {
+		return false, err
+	}
+	return stored.isUIManaged(), nil
+}
+
+func (a *authManager) ApplyControllerUIPolicy(managed, enabled bool) error {
+	stored, err := a.load()
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	stored.UIManaged = &managed
 	stored.UIEnabled = &enabled
 	return a.saveLocked(stored)
 }
@@ -407,8 +453,30 @@ func (a *authManager) cleanupExpiredSessionsLocked(now time.Time) {
 	}
 }
 
+func (a *authManager) sessionFromRequest(r *http.Request) (authSession, error) {
+	if r == nil {
+		return authSession{}, errInvalidCredentials
+	}
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return authSession{}, errInvalidCredentials
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cleanupExpiredSessionsLocked(time.Now().UTC())
+	session, ok := a.sessions[cookie.Value]
+	if !ok {
+		return authSession{}, errInvalidCredentials
+	}
+	return session, nil
+}
+
 func (s *storedAuth) isUIEnabled() bool {
 	return s.UIEnabled == nil || *s.UIEnabled
+}
+
+func (s *storedAuth) isUIManaged() bool {
+	return s.UIManaged != nil && *s.UIManaged
 }
 
 func validateBootstrapRequest(req bootstrapRequest) error {

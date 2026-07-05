@@ -275,6 +275,77 @@ func TestResetNodeStateRemovesAdoptionAndTLSMaterial(t *testing.T) {
 	}
 }
 
+func TestApplyFactoryResetIfRequestedClearsStateAndMarker(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	markerPath := filepath.Join(tempDir, "wattkeeper-factory-reset")
+	adoptionPath := filepath.Join(tempDir, "adoption.json")
+	tlsCertPath := filepath.Join(tempDir, "node-api.crt")
+	tlsKeyPath := filepath.Join(tempDir, "node-api.key")
+	namesPath := filepath.Join(tempDir, "names.json")
+	authPath := filepath.Join(tempDir, "webui-auth.json")
+
+	for _, path := range []string{markerPath, adoptionPath, tlsCertPath, tlsKeyPath, namesPath, authPath} {
+		if err := os.WriteFile(path, []byte("present"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	applied, err := applyFactoryResetIfRequested(nil, []string{markerPath}, []string{adoptionPath, tlsCertPath, tlsKeyPath, namesPath, authPath})
+	if err != nil {
+		t.Fatalf("applyFactoryResetIfRequested() error = %v", err)
+	}
+	if !applied {
+		t.Fatal("applied = false, want true")
+	}
+
+	for _, path := range []string{adoptionPath, tlsCertPath, tlsKeyPath, namesPath, authPath, markerPath} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("stat %s error = %v, want not exists", path, err)
+		}
+	}
+}
+
+func TestApplyFactoryResetIfRequestedNoMarker(t *testing.T) {
+	t.Parallel()
+
+	applied, err := applyFactoryResetIfRequested(nil, []string{filepath.Join(t.TempDir(), "missing-marker")}, []string{filepath.Join(t.TempDir(), "state")})
+	if err != nil {
+		t.Fatalf("applyFactoryResetIfRequested() error = %v", err)
+	}
+	if applied {
+		t.Fatal("applied = true, want false")
+	}
+}
+
+func TestParseFlagsEnablesHTTPAuthByDefault(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := parseFlags(nil)
+	if err != nil {
+		t.Fatalf("parseFlags() error = %v", err)
+	}
+	if !cfg.httpAuth {
+		t.Fatal("httpAuth = false, want true by default")
+	}
+}
+
+func TestParseFlagsAllowsExplicitHTTPAuthBypass(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := parseFlags([]string{"--http-auth=false", "--dev-ui"})
+	if err != nil {
+		t.Fatalf("parseFlags() error = %v", err)
+	}
+	if cfg.httpAuth {
+		t.Fatal("httpAuth = true, want false when explicitly disabled")
+	}
+	if !cfg.devUI {
+		t.Fatal("devUI = false, want true")
+	}
+}
+
 type fakeWatcher struct {
 	events <-chan hotplug.Event
 }

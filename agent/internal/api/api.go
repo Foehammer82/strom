@@ -2,9 +2,15 @@ package api
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/sha256"
+	"crypto/subtle"
+	"crypto/x509"
 	"embed"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"html/template"
@@ -13,6 +19,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +35,8 @@ const (
 	defaultCPUTempPath = "/sys/class/thermal/thermal_zone0/temp"
 	defaultRootPath    = "/"
 	defaultUPSCPath    = "upsc"
+	defaultAgentBinary = "/usr/local/bin/wattkeeper-agent"
+	csrfCookieName     = "wattkeeper_csrf"
 	startingStatus     = "starting"
 	unknownStatus      = "unknown"
 )
@@ -54,6 +64,7 @@ type Options struct {
 	AdoptionPath string
 	DisableAuth  bool
 	AuthPath     string
+	AgentBinary  string
 	NUTUser      string
 	NUTPassword  string
 	Adopter      adoptionHandler
@@ -75,6 +86,7 @@ type Service struct {
 	cpuTempPath  string
 	rootPath     string
 	adoptionPath string
+	agentBinary  string
 	nutUser      string
 	nutPassword  string
 	auth         *authManager
@@ -160,6 +172,25 @@ type upsSetVarResponse struct {
 	Output   string `json:"output"`
 }
 
+type uiPolicyRequest struct {
+	Managed bool `json:"managed"`
+	Enabled bool `json:"enabled"`
+}
+
+type otaUpdateRequest struct {
+	Version         string `json:"version"`
+	BinaryBase64    string `json:"binary_base64"`
+	SHA256          string `json:"sha256"`
+	SignatureBase64 string `json:"signature_base64"`
+}
+
+type otaUpdateResponse struct {
+	Status          string `json:"status"`
+	Version         string `json:"version"`
+	SHA256          string `json:"sha256"`
+	RestartRequired bool   `json:"restart_required"`
+}
+
 type adoptRequest struct {
 	CAPEM         string `json:"ca_pem"`
 	NUTUser       string `json:"nut_user"`
@@ -188,6 +219,7 @@ type indexViewModel struct {
 
 type storedAdoption struct {
 	TokenSHA256 string `json:"token_sha256"`
+	CAPEM       string `json:"ca_pem"`
 }
 
 //go:embed web/*
@@ -203,7 +235,14 @@ func mustSubFS(source fs.FS, dir string) fs.FS {
 	return subtree
 }
 
-var indexTemplate = template.Must(template.New("index").Parse(`<!DOCTYPE html>
+var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
+	"formatTemp": func(value *float64) string {
+		if value == nil {
+			return "unavailable"
+		}
+		return fmt.Sprintf("%.1f C", *value)
+	},
+}).Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="utf-8">
@@ -214,54 +253,80 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 </head>
 <body>
 	<main class="shell">
-		<header class="topbar">
+		<header class="topbar surface">
 			<div class="brand">
 				<img class="brand-mark" src="/assets/logo.svg" alt="Wattkeeper logo">
 				<div class="brand-copy">
 					<h1>Wattkeeper Node</h1>
-					<p>Material-inspired local node dashboard for NUT-backed UPS monitoring and control.</p>
 				</div>
 			</div>
-			<nav class="toolbar" aria-label="Dashboard actions">
-				<button id="theme-toggle" class="button button--ghost" type="button">Dark mode</button>
-				<a class="link-button" href="/settings">Settings</a>
-				{{if .AuthEnabled}}<a class="link-button" href="/auth/logout">Sign out</a>{{end}}
+			<nav id="topbar-toolbar" class="toolbar" aria-label="Dashboard actions">
+				<button
+					id="topbar-menu-toggle"
+					class="button button--ghost menu-toggle"
+					type="button"
+					data-menu-toggle
+					aria-expanded="false"
+					aria-haspopup="menu"
+					aria-label="Toggle navigation menu"
+				>
+					☰
+				</button>
+				<div class="profile-menu" id="profile-menu">
+					<button
+						id="profile-menu-toggle"
+						class="button button--ghost profile-trigger"
+						type="button"
+						data-menu-toggle
+						aria-expanded="false"
+						aria-haspopup="menu"
+					>
+						<span class="profile-avatar" aria-hidden="true">NA</span>
+						<span class="profile-copy">
+							<strong>Node Admin</strong>
+						</span>
+					</button>
+					<div id="profile-menu-panel" class="menu-panel" role="menu" aria-label="Profile options" hidden>
+						<div class="menu-section">
+							<p class="menu-title">Appearance</p>
+							<div class="appearance-segmented" role="radiogroup" aria-label="Color mode">
+								<button class="appearance-option" type="button" role="radio" data-theme-option="system" aria-checked="true">System</button>
+								<button class="appearance-option" type="button" role="radio" data-theme-option="light" aria-checked="false">Light</button>
+								<button class="appearance-option" type="button" role="radio" data-theme-option="dark" aria-checked="false">Dark</button>
+							</div>
+						</div>
+						<div class="menu-divider" role="separator"></div>
+						<div class="menu-section">
+							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/wattkeeper/getting-started/" target="_blank" rel="noreferrer" role="menuitem">
+								<span class="menu-link-icon-wrap" aria-hidden="true">
+									<svg class="menu-link-icon" viewBox="0 0 24 24" focusable="false">
+										<path d="M20 3.5H8a3 3 0 0 0-3 3V18a2.5 2.5 0 0 1 2.5-2.5H20V3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+										<path d="M7.5 15.5H20V20.5H7.5a2.5 2.5 0 0 1 0-5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+										<path d="M9 8h7M9 11h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+									</svg>
+								</span>
+								<span>Docs</span>
+							</a>
+							{{if .AuthEnabled}}<a class="menu-link" href="/settings" role="menuitem">Settings</a>{{end}}
+							{{if .AuthEnabled}}<a class="menu-link" href="/auth/logout" role="menuitem">Sign out</a>{{end}}
+						</div>
+					</div>
+				</div>
 			</nav>
 		</header>
 
 		<section class="surface hero">
-			<div class="hero-grid">
-				<div>
-					<div class="section-head">
-						<h2>Node overview</h2>
-						<span class="helper">Live metrics, polling status, and per-UPS controls.</span>
-					</div>
-					<div id="metrics-grid" class="summary-grid">
-						<article class="metric-card"><span class="eyebrow">Version</span><div class="metric-value">{{.Health.Version}}</div></article>
-						<article class="metric-card"><span class="eyebrow">Serial</span><div class="metric-value">{{if .Health.Serial}}{{.Health.Serial}}{{else}}unknown{{end}}</div></article>
-						<article class="metric-card"><span class="eyebrow">Uptime</span><div class="metric-value">{{.Health.UptimeSeconds}}s</div></article>
-						<article class="metric-card"><span class="eyebrow">Disk free</span><div class="metric-value">{{.Health.DiskFreeBytes}} B</div></article>
-						<article class="metric-card"><span class="eyebrow">CPU temp</span><div class="metric-value">{{if .Health.CPUTemperatureCelsius}}{{printf "%.1f C" .Health.CPUTemperatureCelsius}}{{else}}unavailable{{end}}</div></article>
-						<article class="metric-card"><span class="eyebrow">UPS count</span><div class="metric-value">{{len .Health.UPSes}}</div></article>
-					</div>
-				</div>
-				<aside class="refresh-panel metric-card">
-					<div class="refresh-hero">
-						<svg class="ring" viewBox="0 0 88 88" aria-hidden="true">
-							<circle class="ring-track" cx="44" cy="44" r="34"></circle>
-							<circle id="refresh-ring" class="ring-progress" cx="44" cy="44" r="34"></circle>
-						</svg>
-						<div class="refresh-copy">
-							<span class="eyebrow">Refresh timer</span>
-							<strong id="refresh-seconds">15s</strong>
-							<p id="refresh-status">Polling node health and UPS telemetry every 15 seconds.</p>
-						</div>
-					</div>
-					<div class="toolbar">
-						<button id="refresh-now" class="button button--primary" type="button">Refresh now</button>
-						<button id="refresh-toggle" class="button button--ghost" type="button">Pause auto refresh</button>
-					</div>
-				</aside>
+			<div class="section-head">
+				<h2>Node overview</h2>
+				<span class="helper">Live metrics and per-UPS controls.</span>
+			</div>
+			<div id="metrics-grid" class="summary-grid">
+				<article class="metric-card"><span class="eyebrow">Version</span><div class="metric-value">{{.Health.Version}}</div></article>
+				<article class="metric-card"><span class="eyebrow">Serial</span><div class="metric-value">{{if .Health.Serial}}{{.Health.Serial}}{{else}}unknown{{end}}</div></article>
+				<article class="metric-card"><span class="eyebrow">Uptime</span><div class="metric-value">{{.Health.UptimeSeconds}}s</div></article>
+				<article class="metric-card"><span class="eyebrow">Disk free</span><div class="metric-value">{{.Health.DiskFreeBytes}} B</div></article>
+				<article class="metric-card"><span class="eyebrow">CPU temp</span><div class="metric-value">{{formatTemp .Health.CPUTemperatureCelsius}}</div></article>
+				<article class="metric-card"><span class="eyebrow">UPS count</span><div class="metric-value">{{len .Health.UPSes}}</div></article>
 			</div>
 		</section>
 
@@ -368,6 +433,7 @@ func New(logger *log.Logger, opts Options) *Service {
 		cpuTempPath:  cpuTempPath,
 		rootPath:     rootPath,
 		adoptionPath: opts.AdoptionPath,
+		agentBinary:  strings.TrimSpace(opts.AgentBinary),
 		nutUser:      opts.NUTUser,
 		nutPassword:  opts.NUTPassword,
 		auth:         newAuthManager(opts.DisableAuth, opts.AuthPath),
@@ -414,6 +480,8 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("/api/ups/", s.handleAPIUPS)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/ui", s.handleUISetting)
+	mux.HandleFunc("/api/settings/ui/policy", s.handleUIPolicy)
+	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/status/details", s.handleStatusDetails)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -437,7 +505,12 @@ func (s *Service) handleIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if needsBootstrap {
-			s.renderBootstrapPage(w, http.StatusOK, "")
+			token, err := s.issueCSRFToken(w, r)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			s.renderBootstrapPage(w, http.StatusOK, token, "")
 			return
 		}
 		if _, ok := s.requireSession(w, r); !ok {
@@ -476,11 +549,27 @@ func (s *Service) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if wantsHTML(r) {
+		if err := s.validateAnonymousCSRF(r); err != nil {
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return
+			}
+			s.renderBootstrapPage(w, http.StatusForbidden, token, err.Error())
+			return
+		}
+	}
 
 	req, err := bootstrapRequestFromRequest(r)
 	if err != nil {
 		if wantsHTML(r) {
-			s.renderBootstrapPage(w, http.StatusBadRequest, err.Error())
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return
+			}
+			s.renderBootstrapPage(w, http.StatusBadRequest, token, err.Error())
 			return
 		}
 		writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -500,13 +589,18 @@ func (s *Service) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if wantsHTML(r) && status == http.StatusBadRequest {
-			s.renderBootstrapPage(w, status, err.Error())
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return
+			}
+			s.renderBootstrapPage(w, status, token, err.Error())
 			return
 		}
 		writeJSONError(w, status, err.Error())
 		return
 	}
-	if err := s.startSession(w, strings.TrimSpace(req.Username)); err != nil {
+	if err := s.startSession(w, r, strings.TrimSpace(req.Username)); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -558,12 +652,17 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
+		token, err := s.issueCSRFToken(w, r)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		uiEnabled, err := s.auth.UIEnabled()
 		if err != nil && !errors.Is(err, errAuthNotConfigured) {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		s.renderLoginPage(w, http.StatusOK, "", !uiEnabled)
+		s.renderLoginPage(w, http.StatusOK, token, "", !uiEnabled)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -571,10 +670,26 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if wantsHTML(r) {
+		if err := s.validateAnonymousCSRF(r); err != nil {
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return
+			}
+			s.renderLoginPage(w, http.StatusForbidden, token, err.Error(), false)
+			return
+		}
+	}
 	req, err := loginRequestFromRequest(r)
 	if err != nil {
 		if wantsHTML(r) {
-			s.renderLoginPage(w, http.StatusBadRequest, err.Error(), false)
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return
+			}
+			s.renderLoginPage(w, http.StatusBadRequest, token, err.Error(), false)
 			return
 		}
 		writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -582,7 +697,12 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateLoginRequest(req); err != nil {
 		if wantsHTML(r) {
-			s.renderLoginPage(w, http.StatusBadRequest, err.Error(), false)
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return
+			}
+			s.renderLoginPage(w, http.StatusBadRequest, token, err.Error(), false)
 			return
 		}
 		writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -590,13 +710,18 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.auth.Authenticate(req.Username, req.Password); err != nil {
 		if wantsHTML(r) {
-			s.renderLoginPage(w, http.StatusUnauthorized, "invalid username or password", false)
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return
+			}
+			s.renderLoginPage(w, http.StatusUnauthorized, token, "invalid username or password", false)
 			return
 		}
 		writeJSONError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
-	if err := s.startSession(w, strings.TrimSpace(req.Username)); err != nil {
+	if err := s.startSession(w, r, strings.TrimSpace(req.Username)); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -622,10 +747,16 @@ func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		s.auth.ClearSession(cookie.Value)
 	}
-	s.clearSessionCookie(w)
+	s.clearSessionCookie(w, r)
 	if wantsHTML(r) {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
@@ -639,6 +770,12 @@ func (s *Service) handleReset(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
 	if _, ok := s.requireSession(w, r); !ok {
 		return
 	}
@@ -646,7 +783,7 @@ func (s *Service) handleReset(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.clearSessionCookie(w)
+	s.clearSessionCookie(w, r)
 	if wantsHTML(r) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -660,6 +797,10 @@ func (s *Service) handleSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !s.auth.Enabled() {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 	username, ok := s.requireSession(w, r)
 	if !ok {
 		return
@@ -669,7 +810,17 @@ func (s *Service) handleSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.renderSettingsPage(w, http.StatusOK, settingsViewModel{Username: username, UIEnabled: uiEnabled, Message: r.URL.Query().Get("message")})
+	uiManaged, err := s.auth.UIManaged()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	csrfToken, err := s.auth.SessionCSRFToken(r)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	s.renderSettingsPage(w, http.StatusOK, settingsViewModel{Username: username, UIEnabled: uiEnabled, UIManaged: uiManaged, Message: r.URL.Query().Get("message"), CSRFToken: csrfToken})
 }
 
 func (s *Service) handleUISetting(w http.ResponseWriter, r *http.Request) {
@@ -677,6 +828,12 @@ func (s *Service) handleUISetting(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", http.MethodPost)
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
+	}
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
+		}
 	}
 	if _, ok := s.requireSession(w, r); !ok {
 		return
@@ -687,6 +844,10 @@ func (s *Service) handleUISetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.auth.SetUIEnabled(enabled); err != nil {
+		if errors.Is(err, errUIPolicyManaged) {
+			writeJSONError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -699,6 +860,164 @@ func (s *Service) handleUISetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "updated", "ui_enabled": enabled})
+}
+
+func (s *Service) handleUIPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.requireControllerToken(w, r) {
+		return
+	}
+	var request uiPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode local UI policy request: %v", err))
+		return
+	}
+	if err := s.auth.ApplyControllerUIPolicy(request.Managed, request.Enabled); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "updated", "ui_managed": request.Managed, "ui_enabled": request.Enabled})
+}
+
+func (s *Service) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.requireControllerToken(w, r) {
+		return
+	}
+
+	var request otaUpdateRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 96*1024*1024))
+	if err := decoder.Decode(&request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode ota update request: %v", err))
+		return
+	}
+	if strings.TrimSpace(request.Version) == "" || strings.TrimSpace(request.BinaryBase64) == "" || strings.TrimSpace(request.SHA256) == "" || strings.TrimSpace(request.SignatureBase64) == "" {
+		writeJSONError(w, http.StatusBadRequest, "version, binary_base64, sha256, and signature_base64 are required")
+		return
+	}
+
+	binaryPayload, err := base64.StdEncoding.DecodeString(strings.TrimSpace(request.BinaryBase64))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode binary_base64: %v", err))
+		return
+	}
+	if len(binaryPayload) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "binary payload is empty")
+		return
+	}
+	signature, err := base64.StdEncoding.DecodeString(strings.TrimSpace(request.SignatureBase64))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode signature_base64: %v", err))
+		return
+	}
+	digest := sha256.Sum256(binaryPayload)
+	providedDigest, err := hex.DecodeString(strings.ToLower(strings.TrimSpace(request.SHA256)))
+	if err != nil || len(providedDigest) != len(digest) {
+		writeJSONError(w, http.StatusBadRequest, "sha256 must be a 64-character lowercase hex digest")
+		return
+	}
+	if subtle.ConstantTimeCompare(digest[:], providedDigest) != 1 {
+		writeJSONError(w, http.StatusBadRequest, "sha256 does not match binary payload")
+		return
+	}
+
+	adoption, err := s.loadAdoption()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if adoption == nil || strings.TrimSpace(adoption.CAPEM) == "" {
+		writeJSONError(w, http.StatusConflict, "node adoption CA is unavailable for signature verification")
+		return
+	}
+	if err := verifySignedUpdate(adoption.CAPEM, digest[:], signature); err != nil {
+		writeJSONError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	if _, err := s.replaceAgentBinary(binaryPayload); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, otaUpdateResponse{Status: "applied", Version: strings.TrimSpace(request.Version), SHA256: strings.ToLower(strings.TrimSpace(request.SHA256)), RestartRequired: true})
+}
+
+func verifySignedUpdate(caPEM string, digest, signature []byte) error {
+	if len(digest) != 32 {
+		return fmt.Errorf("invalid digest size")
+	}
+	block, _ := pem.Decode([]byte(caPEM))
+	if block == nil {
+		return fmt.Errorf("decode adopted controller CA certificate")
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse adopted controller CA certificate: %w", err)
+	}
+	publicKey, ok := certificate.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return fmt.Errorf("unsupported controller CA public key type %T", certificate.PublicKey)
+	}
+	if !ecdsa.VerifyASN1(publicKey, digest, signature) {
+		return fmt.Errorf("signature verification failed")
+	}
+	return nil
+}
+
+func (s *Service) replaceAgentBinary(content []byte) (string, error) {
+	target := strings.TrimSpace(s.agentBinary)
+	if target == "" {
+		executable, err := os.Executable()
+		if err == nil && strings.TrimSpace(executable) != "" {
+			target = executable
+		}
+	}
+	if target == "" {
+		target = defaultAgentBinary
+	}
+	resolvedTarget, err := filepath.Abs(target)
+	if err != nil {
+		return "", fmt.Errorf("resolve agent binary path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(resolvedTarget), 0o755); err != nil {
+		return "", fmt.Errorf("prepare agent binary directory: %w", err)
+	}
+	tempFile, err := os.CreateTemp(filepath.Dir(resolvedTarget), ".wattkeeper-agent-ota-*")
+	if err != nil {
+		return "", fmt.Errorf("create temporary OTA file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer func() {
+		_ = os.Remove(tempPath)
+	}()
+	if _, err := tempFile.Write(content); err != nil {
+		_ = tempFile.Close()
+		return "", fmt.Errorf("write OTA binary payload: %w", err)
+	}
+	if err := tempFile.Sync(); err != nil {
+		_ = tempFile.Close()
+		return "", fmt.Errorf("sync OTA binary payload: %w", err)
+	}
+	if err := tempFile.Chmod(0o755); err != nil {
+		_ = tempFile.Close()
+		return "", fmt.Errorf("chmod OTA binary payload: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return "", fmt.Errorf("close OTA temporary file: %w", err)
+	}
+	if err := os.Rename(tempPath, resolvedTarget); err != nil {
+		return "", fmt.Errorf("replace agent binary: %w", err)
+	}
+	return resolvedTarget, nil
 }
 
 func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -872,18 +1191,18 @@ func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) renderBootstrapPage(w http.ResponseWriter, status int, message string) {
+func (s *Service) renderBootstrapPage(w http.ResponseWriter, status int, csrfToken, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := bootstrapTemplate.Execute(w, bootstrapViewModel{Error: message}); err != nil && s.logger != nil {
+	if err := bootstrapTemplate.Execute(w, bootstrapViewModel{Error: message, CSRFToken: csrfToken}); err != nil && s.logger != nil {
 		s.logger.Printf("render bootstrap failed: %v", err)
 	}
 }
 
-func (s *Service) renderLoginPage(w http.ResponseWriter, status int, message string, uiDisabled bool) {
+func (s *Service) renderLoginPage(w http.ResponseWriter, status int, csrfToken, message string, uiDisabled bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := loginTemplate.Execute(w, loginViewModel{Error: message, UIDisabled: uiDisabled}); err != nil && s.logger != nil {
+	if err := loginTemplate.Execute(w, loginViewModel{Error: message, UIDisabled: uiDisabled, CSRFToken: csrfToken}); err != nil && s.logger != nil {
 		s.logger.Printf("render login failed: %v", err)
 	}
 }
@@ -907,7 +1226,12 @@ func (s *Service) requireSession(w http.ResponseWriter, r *http.Request) (string
 	}
 	if needsBootstrap {
 		if wantsHTML(r) {
-			s.renderBootstrapPage(w, http.StatusOK, "")
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return "", false
+			}
+			s.renderBootstrapPage(w, http.StatusOK, token, "")
 		} else {
 			writeJSONError(w, http.StatusServiceUnavailable, errAuthNotConfigured.Error())
 		}
@@ -917,7 +1241,12 @@ func (s *Service) requireSession(w http.ResponseWriter, r *http.Request) (string
 	if err != nil {
 		if wantsHTML(r) {
 			uiDisabled, _ := s.auth.UIEnabled()
-			s.renderLoginPage(w, http.StatusUnauthorized, "sign in required", !uiDisabled)
+			token, issueErr := s.issueCSRFToken(w, r)
+			if issueErr != nil {
+				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
+				return "", false
+			}
+			s.renderLoginPage(w, http.StatusUnauthorized, token, "sign in required", !uiDisabled)
 		} else {
 			writeJSONError(w, http.StatusUnauthorized, "authentication required")
 		}
@@ -939,6 +1268,26 @@ func (s *Service) requireControllerOrSession(w http.ResponseWriter, r *http.Requ
 	}
 	_, ok := s.requireSession(w, r)
 	return ok
+}
+
+func (s *Service) requireControllerToken(w http.ResponseWriter, r *http.Request) bool {
+	if !s.auth.Enabled() {
+		writeJSONError(w, http.StatusNotFound, "controller token auth unavailable when http auth is disabled")
+		return false
+	}
+	matched, err := s.controllerTokenMatches(r)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf("controller bearer auth unavailable: %v", err)
+		}
+		writeJSONError(w, http.StatusUnauthorized, "controller authentication required")
+		return false
+	}
+	if !matched {
+		writeJSONError(w, http.StatusUnauthorized, "controller authentication required")
+		return false
+	}
+	return true
 }
 
 func (s *Service) controllerTokenMatches(r *http.Request) (bool, error) {
@@ -978,8 +1327,14 @@ func (s *Service) loadAdoption() (*storedAdoption, error) {
 	return &adoption, nil
 }
 
-func (s *Service) startSession(w http.ResponseWriter, username string) error {
-	token, err := s.auth.CreateSession(username)
+func (s *Service) startSession(w http.ResponseWriter, r *http.Request, username string) error {
+	if r != nil {
+		if cookie, err := r.Cookie(sessionCookieName); err == nil {
+			s.auth.ClearSession(strings.TrimSpace(cookie.Value))
+		}
+	}
+	secure := cookieShouldBeSecure(r)
+	token, csrfToken, err := s.auth.CreateSession(username)
 	if err != nil {
 		return err
 	}
@@ -989,14 +1344,25 @@ func (s *Service) startSession(w http.ResponseWriter, username string) error {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   false,
+		Secure:   secure,
+		MaxAge:   int(defaultSessionTTL.Seconds()),
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    csrfToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
 		MaxAge:   int(defaultSessionTTL.Seconds()),
 	})
 	return nil
 }
 
-func (s *Service) clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: false, MaxAge: -1})
+func (s *Service) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	secure := cookieShouldBeSecure(r)
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: secure, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: secure, MaxAge: -1})
 }
 
 func (s *Service) buildStatusResponse(ctx context.Context) (statusResponse, error) {
@@ -1377,6 +1743,12 @@ func parseUPSVariablesText(output []byte) (map[string]string, error) {
 	return variables, nil
 }
 
+// upsCommandNamePattern matches a real NUT instant-command token: a dotted
+// identifier such as "load.off" or "test.battery.start.quick" (occasionally an
+// all-caps token such as "FSD"). It intentionally rejects anything containing
+// whitespace or brackets, which filters out `upscmd -l`'s prose header line.
+var upsCommandNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$`)
+
 func parseUPSCommands(output []byte) []upsCommand {
 	commands := make([]upsCommand, 0)
 	for _, line := range strings.Split(string(output), "\n") {
@@ -1393,6 +1765,17 @@ func parseUPSCommands(output []byte) []upsCommand {
 		} else if head, tail, ok := strings.Cut(trimmed, ":"); ok {
 			name = strings.TrimSpace(head)
 			description = strings.TrimSpace(tail)
+		}
+
+		// `upscmd -l <ups>` prints a leading prose header, e.g.
+		// "Instant commands supported on UPS [name]:", before the actual command
+		// list. That header line contains a trailing colon and so falls into the
+		// ":" split above, which previously turned it into a bogus command entry.
+		// A real NUT command name is a dotted lowercase identifier (occasionally
+		// uppercase, e.g. "FSD") with no spaces or brackets, so filter anything
+		// else out here rather than trusting every non-blank line.
+		if !upsCommandNamePattern.MatchString(name) {
+			continue
 		}
 
 		commands = append(commands, upsCommand{
@@ -1700,6 +2083,82 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func (s *Service) issueCSRFToken(w http.ResponseWriter, r *http.Request) (string, error) {
+	token, err := randomToken(24)
+	if err != nil {
+		return "", err
+	}
+	secure := cookieShouldBeSecure(r)
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+		MaxAge:   int(defaultSessionTTL.Seconds()),
+	})
+	return token, nil
+}
+
+func cookieShouldBeSecure(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+func (s *Service) validateAnonymousCSRF(r *http.Request) error {
+	requestToken, err := csrfTokenFromRequest(r)
+	if err != nil {
+		return err
+	}
+	cookie, err := r.Cookie(csrfCookieName)
+	if err != nil {
+		return errors.New("csrf token cookie is required")
+	}
+	if subtle.ConstantTimeCompare([]byte(requestToken), []byte(cookie.Value)) != 1 {
+		return errors.New("csrf token mismatch")
+	}
+	return nil
+}
+
+func (s *Service) validateSessionCSRF(r *http.Request) error {
+	requestToken, err := csrfTokenFromRequest(r)
+	if err != nil {
+		return err
+	}
+	sessionToken, err := s.auth.SessionCSRFToken(r)
+	if err != nil {
+		return errors.New("csrf session token is required")
+	}
+	if subtle.ConstantTimeCompare([]byte(requestToken), []byte(sessionToken)) != 1 {
+		return errors.New("csrf token mismatch")
+	}
+	return nil
+}
+
+func csrfTokenFromRequest(r *http.Request) (string, error) {
+	if r == nil {
+		return "", errors.New("csrf token is required")
+	}
+	headerToken := strings.TrimSpace(r.Header.Get("X-CSRF-Token"))
+	if headerToken != "" {
+		return headerToken, nil
+	}
+	if err := r.ParseForm(); err != nil {
+		return "", fmt.Errorf("parse csrf form token: %w", err)
+	}
+	formToken := strings.TrimSpace(r.FormValue("csrf_token"))
+	if formToken == "" {
+		return "", errors.New("csrf token is required")
+	}
+	return formToken, nil
 }
 
 type statusRecorder struct {

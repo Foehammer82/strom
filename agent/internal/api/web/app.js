@@ -1,26 +1,28 @@
 const POLL_INTERVAL_MS = 15000;
-const RING_CIRCUMFERENCE = 2 * Math.PI * 34;
+const THEME_PREF_STORAGE_KEY = "wattkeeper-theme-preference";
+const LEGACY_THEME_STORAGE_KEY = "wattkeeper-theme";
+const prefersDarkMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
 const state = {
   health: null,
   upses: [],
   selectedUPS: null,
   detail: null,
-  paused: false,
   nextRefreshAt: Date.now() + POLL_INTERVAL_MS,
   refreshTimer: null,
-  tickTimer: null,
   toastTimer: null,
   pendingCommand: null,
+  themePreference: "system",
+  profileMenuOpen: false,
 };
 
 const els = {
-  themeToggle: document.getElementById("theme-toggle"),
-  refreshNow: document.getElementById("refresh-now"),
-  refreshToggle: document.getElementById("refresh-toggle"),
-  refreshSeconds: document.getElementById("refresh-seconds"),
-  refreshStatus: document.getElementById("refresh-status"),
-  refreshRing: document.getElementById("refresh-ring"),
+  topbar: document.querySelector(".topbar"),
+  profileMenu: document.getElementById("profile-menu"),
+  topbarToolbar: document.getElementById("topbar-toolbar"),
+  profileMenuToggles: Array.from(document.querySelectorAll("[data-menu-toggle]")),
+  profileMenuPanel: document.getElementById("profile-menu-panel"),
+  themeOptions: Array.from(document.querySelectorAll("[data-theme-option]")),
   metrics: document.getElementById("metrics-grid"),
   upsGrid: document.getElementById("ups-grid"),
   detail: document.getElementById("ups-detail"),
@@ -33,57 +35,168 @@ const els = {
 };
 
 function initTheme() {
-  const saved = window.localStorage.getItem("wattkeeper-theme");
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  applyTheme(saved || (prefersDark ? "dark" : "light"));
-  els.themeToggle.addEventListener("click", () => {
-    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    applyTheme(next);
-    window.localStorage.setItem("wattkeeper-theme", next);
+  const savedPref = normalizeThemePreference(window.localStorage.getItem(THEME_PREF_STORAGE_KEY));
+  const legacyTheme = normalizeThemePreference(window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY));
+  const initialPreference = savedPref || legacyTheme || "system";
+  applyThemePreference(initialPreference, { persist: false });
+
+  els.themeOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      const nextPreference = normalizeThemePreference(option.dataset.themeOption);
+      if (!nextPreference) {
+        return;
+      }
+      applyThemePreference(nextPreference);
+      closeProfileMenu();
+    });
   });
-}
 
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  els.themeToggle.textContent = theme === "dark" ? "Light mode" : "Dark mode";
-}
-
-function startTimers() {
-  if (state.tickTimer) {
-    window.clearInterval(state.tickTimer);
+  if (typeof prefersDarkMedia.addEventListener === "function") {
+    prefersDarkMedia.addEventListener("change", handleSystemThemeChange);
+  } else {
+    prefersDarkMedia.addListener(handleSystemThemeChange);
   }
-  state.tickTimer = window.setInterval(updateRefreshCountdown, 250);
-  updateRefreshCountdown();
+}
+
+function normalizeThemePreference(value) {
+  if (value === "system" || value === "light" || value === "dark") {
+    return value;
+  }
+  return null;
+}
+
+function resolveTheme(preference) {
+  if (preference === "light" || preference === "dark") {
+    return preference;
+  }
+  return prefersDarkMedia.matches ? "dark" : "light";
+}
+
+function handleSystemThemeChange() {
+  if (state.themePreference !== "system") {
+    return;
+  }
+  applyThemePreference("system", { persist: false });
+}
+
+function applyThemePreference(preference, options = { persist: true }) {
+  state.themePreference = preference;
+  const resolvedTheme = resolveTheme(preference);
+  document.documentElement.dataset.theme = resolvedTheme;
+
+  els.themeOptions.forEach((option) => {
+    option.setAttribute("aria-checked", option.dataset.themeOption === preference ? "true" : "false");
+  });
+
+  if (options.persist) {
+    window.localStorage.setItem(THEME_PREF_STORAGE_KEY, preference);
+    window.localStorage.setItem(LEGACY_THEME_STORAGE_KEY, resolvedTheme);
+  }
+}
+
+function toggleProfileMenu() {
+  if (!els.profileMenuPanel || els.profileMenuToggles.length === 0) {
+    return;
+  }
+  if (state.profileMenuOpen) {
+    closeProfileMenu({ focusTrigger: false });
+    return;
+  }
+  state.profileMenuOpen = true;
+  if (els.topbarToolbar) {
+    els.topbarToolbar.classList.add("is-open");
+  }
+  if (els.topbar) {
+    els.topbar.classList.add("is-menu-open");
+  }
+  els.profileMenuPanel.hidden = false;
+  els.profileMenuToggles.forEach((toggle) => toggle.setAttribute("aria-expanded", "true"));
+  focusSelectedThemeOption();
+}
+
+function closeProfileMenu(options = { focusTrigger: false }) {
+  if (!els.profileMenuPanel || els.profileMenuToggles.length === 0) {
+    return;
+  }
+  state.profileMenuOpen = false;
+  if (els.topbarToolbar) {
+    els.topbarToolbar.classList.remove("is-open");
+  }
+  if (els.topbar) {
+    els.topbar.classList.remove("is-menu-open");
+  }
+  els.profileMenuPanel.hidden = true;
+  els.profileMenuToggles.forEach((toggle) => toggle.setAttribute("aria-expanded", "false"));
+  if (options.focusTrigger) {
+    els.profileMenuToggles[0].focus();
+  }
+}
+
+function focusSelectedThemeOption() {
+  const index = els.themeOptions.findIndex((option) => option.getAttribute("aria-checked") === "true");
+  const next = els.themeOptions[Math.max(0, index)] || els.themeOptions[0];
+  if (next) {
+    next.focus();
+  }
+}
+
+function handleMenuOptionNavigation(event) {
+  if (!state.profileMenuOpen) {
+    return;
+  }
+  const focusedIndex = els.themeOptions.findIndex((option) => option === document.activeElement);
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    const nextIndex = focusedIndex < 0 ? 0 : (focusedIndex + 1) % els.themeOptions.length;
+    els.themeOptions[nextIndex]?.focus();
+    return;
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    const nextIndex = focusedIndex < 0 ? els.themeOptions.length - 1 : (focusedIndex - 1 + els.themeOptions.length) % els.themeOptions.length;
+    els.themeOptions[nextIndex]?.focus();
+    return;
+  }
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    const nextIndex = focusedIndex < 0 ? 0 : (focusedIndex + 1) % els.themeOptions.length;
+    els.themeOptions[nextIndex]?.focus();
+    return;
+  }
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    const nextIndex = focusedIndex < 0 ? els.themeOptions.length - 1 : (focusedIndex - 1 + els.themeOptions.length) % els.themeOptions.length;
+    els.themeOptions[nextIndex]?.focus();
+    return;
+  }
+  if (event.key === "Home") {
+    event.preventDefault();
+    els.themeOptions[0]?.focus();
+    return;
+  }
+  if (event.key === "End") {
+    event.preventDefault();
+    els.themeOptions[els.themeOptions.length - 1]?.focus();
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeProfileMenu({ focusTrigger: true });
+    return;
+  }
+  if (event.key === "Tab") {
+    closeProfileMenu({ focusTrigger: false });
+  }
 }
 
 function scheduleRefresh() {
   if (state.refreshTimer) {
     window.clearTimeout(state.refreshTimer);
   }
-  if (state.paused) {
-    return;
-  }
   const delay = Math.max(0, state.nextRefreshAt - Date.now());
   state.refreshTimer = window.setTimeout(async () => {
     await refreshAll({ preserveSelection: true, silent: true });
   }, delay);
-}
-
-function updateRefreshCountdown() {
-  if (state.paused) {
-    els.refreshSeconds.textContent = "paused";
-    els.refreshStatus.textContent = "Auto refresh is paused.";
-    els.refreshRing.style.strokeDasharray = `${RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`;
-    els.refreshRing.style.strokeDashoffset = `${RING_CIRCUMFERENCE}`;
-    return;
-  }
-  const remaining = Math.max(0, state.nextRefreshAt - Date.now());
-  const seconds = Math.ceil(remaining / 1000);
-  els.refreshSeconds.textContent = `${seconds}s`;
-  els.refreshStatus.textContent = `Polling node health and UPS telemetry every 15 seconds.`;
-  const progress = 1 - remaining / POLL_INTERVAL_MS;
-  els.refreshRing.style.strokeDasharray = `${RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`;
-  els.refreshRing.style.strokeDashoffset = `${RING_CIRCUMFERENCE * progress}`;
 }
 
 async function fetchJSON(url, options) {
@@ -128,7 +241,6 @@ async function refreshAll(options = {}) {
       showToast("Dashboard refreshed.");
     }
   } catch (error) {
-    els.refreshStatus.textContent = error.message;
     showToast(error.message, true);
     state.nextRefreshAt = Date.now() + POLL_INTERVAL_MS;
     scheduleRefresh();
@@ -224,8 +336,9 @@ function renderUPSGrid() {
 
   els.upsGrid.innerHTML = state.upses.map((ups) => {
     const chipClass = statusClass(ups.status);
+    const accentClass = chipClass ? `ups-card--${chipClass.replace("chip--", "")}` : "ups-card--good";
     return `
-      <article class="ups-card ${ups.name === state.selectedUPS ? "is-selected" : ""}" data-ups-name="${escapeAttribute(ups.name)}" tabindex="0">
+      <article class="ups-card ${accentClass} ${ups.name === state.selectedUPS ? "is-selected" : ""}" data-ups-name="${escapeAttribute(ups.name)}" tabindex="0">
         <header>
           <div>
             <h3>${escapeHTML(ups.name)}</h3>
@@ -234,10 +347,10 @@ function renderUPSGrid() {
           <span class="chip ${chipClass}">${escapeHTML(ups.status)}</span>
         </header>
         <div class="stat-grid">
-          ${miniMetric("Charge", formatPercent(ups.battery_charge_percent))}
-          ${miniMetric("Load", formatPercent(ups.load_percent))}
-          ${miniMetric("Runtime", formatDuration(ups.runtime_seconds))}
-          ${miniMetric("Output", formatVoltage(ups.output_voltage))}
+          ${statItem("Charge", formatPercent(ups.battery_charge_percent))}
+          ${statItem("Load", formatPercent(ups.load_percent))}
+          ${statItem("Runtime", formatDuration(ups.runtime_seconds))}
+          ${statItem("Output", formatVoltage(ups.output_voltage))}
         </div>
       </article>
     `;
@@ -313,8 +426,7 @@ function renderDetail() {
       <a href="/status">Public status</a>
       <a href="/status/details">Detailed JSON</a>
       <a href="/healthz">Health payload</a>
-      <a href="/settings">Settings</a>
-      <a href="/auth/logout">Sign out</a>
+      <a href="https://foehammer82.github.io/wattkeeper/getting-started/" target="_blank" rel="noreferrer">Docs</a>
     </div>
   `;
 
@@ -446,12 +558,12 @@ function showToast(message, isError) {
   }, 3600);
 }
 
-function miniMetric(label, value) {
-  return `<div class="mini-card"><span class="eyebrow">${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`;
+function statItem(label, value) {
+  return `<div class="stat-item"><span class="stat-label">${escapeHTML(label)}</span><span class="stat-value">${escapeHTML(value)}</span></div>`;
 }
 
 function detailMetric(label, value) {
-  return `<div class="detail-card"><span class="eyebrow">${escapeHTML(label)}</span><div class="metric-value">${escapeHTML(value)}</div></div>`;
+  return `<div class="stat-item"><span class="stat-label">${escapeHTML(label)}</span><span class="stat-value">${escapeHTML(value)}</span></div>`;
 }
 
 function formatPercent(value) {
@@ -521,15 +633,36 @@ function cssEscape(value) {
   return String(value).replaceAll('"', '\\"');
 }
 
-els.refreshNow.addEventListener("click", () => refreshAll({ preserveSelection: true }));
-els.refreshToggle.addEventListener("click", () => {
-  state.paused = !state.paused;
-  els.refreshToggle.textContent = state.paused ? "Resume auto refresh" : "Pause auto refresh";
-  if (!state.paused) {
-    state.nextRefreshAt = Date.now() + POLL_INTERVAL_MS;
+els.profileMenuToggles.forEach((toggle) => {
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleProfileMenu();
+  });
+  toggle.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!state.profileMenuOpen) {
+        toggleProfileMenu();
+      }
+    }
+  });
+});
+if (els.profileMenuPanel) {
+  els.profileMenuPanel.addEventListener("keydown", handleMenuOptionNavigation);
+}
+document.addEventListener("click", (event) => {
+  if (!state.profileMenuOpen) {
+    return;
   }
-  scheduleRefresh();
-  updateRefreshCountdown();
+  if (els.profileMenu.contains(event.target)) {
+    return;
+  }
+  closeProfileMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.profileMenuOpen) {
+    closeProfileMenu({ focusTrigger: true });
+  }
 });
 
 els.confirmInput.addEventListener("input", () => {
@@ -551,6 +684,5 @@ els.confirmModal.addEventListener("click", (event) => {
 });
 
 initTheme();
-startTimers();
 renderEmptyDetail();
 refreshAll({ preserveSelection: true, silent: true });

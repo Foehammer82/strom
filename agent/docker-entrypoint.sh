@@ -3,7 +3,7 @@ set -eu
 
 SIM_DIR="${AGENT_SIM_DIR:-/sim/dummy-ups}"
 NODE_ID="${AGENT_NODE_ID:-${HOSTNAME:-sim-node}}"
-HTTP_AUTH="${AGENT_HTTP_AUTH:-false}"
+HTTP_AUTH="${AGENT_HTTP_AUTH:-true}"
 DEMO_MODE="${AGENT_DEMO_MODE:-true}"
 NUT_USER="${AGENT_NUT_USERNAME:-agent}"
 NUT_PASS="${AGENT_NUT_PASSWORD:-agent-secret}"
