@@ -228,8 +228,8 @@ automatically with correct device grouping, controls work.
 
 ## Phase 5 — Hardening & lifecycle
 
-- [ ] Agent OTA updates pushed from controller (signed binaries)
-- [ ] Node factory-reset flow (GPIO jumper or boot-partition flag file)
+- [x] Agent OTA updates pushed from controller (signed binaries)
+- [x] Node factory-reset flow (GPIO jumper or boot-partition flag file)
 - [x] Node HTTP auth bootstrap: first browser client to reach an uninitialized
       node must create the local admin username/password; after bootstrap, the
       node dashboard and detailed node APIs such as `GET /status/details`
@@ -238,21 +238,92 @@ automatically with correct device grouping, controls work.
       to basic aggregate state suitable for discovery and quick checks; avoid
       stable UPS identifiers and detailed node metrics there, and keep richer
       diagnostics behind the authenticated node UI or controller-trusted APIs
-- [ ] Insecure node UI bypass policy: keep `--http-auth=false` as an explicit
+- [x] Insecure node UI bypass policy: keep `--http-auth=false` as an explicit
       local-development escape hatch only; do not enable it in image defaults,
       packaged service units, or controller-managed production policy
-- [ ] Session and form hardening for node-local auth: review CSRF protection,
+- [x] Session and form hardening for node-local auth: review CSRF protection,
       cookie security attributes under TLS, session expiration/rotation, and
       the exact contract for non-browser authenticated clients
-- [ ] Controller-managed node UI policy: let the controller drive the node's
+- [x] Controller-managed node UI policy: let the controller drive the node's
       local UI enabled/disabled state through the same policy surface that
       backs the node settings page, with a documented local override/reset
-- [ ] Controller-managed node UI policy: after adoption, the controller can
+- [x] Controller-managed node UI policy: after adoption, the controller can
       enable or disable each node's local web UI and related local-auth access
-- [ ] Battery health trending / replace-by estimates from runtime decay
-- [ ] Backup/restore of controller DB
-- [ ] Read-only rootfs or overlayfs on nodes to survive SD card abuse
-- [ ] Multi-UPS-per-node support verification (USB hub on a 3A+ etc.)
+- [x] Battery health trending / replace-by estimates from runtime decay
+- [x] Backup/restore of controller DB
+- [x] Read-only rootfs or overlayfs on nodes to survive SD card abuse
+- [x] Multi-UPS-per-node support verification (USB hub on a 3A+ etc.)
+
+## Phase 5.5 - Release orchestration and auto-versioning
+
+Goal: remove manual tag choreography for normal releases by letting merges to
+`main` drive deterministic build/deploy/release automation, while still
+keeping explicit maintainer control over major/minor version bumps.
+
+- [ ] Create a single source of truth for release train control (for example,
+      `.github/release/version.toml`) that stores the active `major` and
+      `minor` values plus RC behavior toggles used by workflows.
+- [ ] Add a validated `wk release next-version` path that computes the next
+      patch from existing tags for the configured major/minor train
+      (`vMAJOR.MINOR.PATCH`) and supports prerelease forms
+      (`vMAJOR.MINOR.PATCH-rcN`).
+- [ ] Add automation so any merge commit or direct push to `main` runs a
+      release orchestration workflow that:
+      1. Computes `next_patch` for the configured major/minor train
+      2. Creates an immutable annotated release tag
+      3. Reuses existing release jobs to publish binaries, node image, and
+         controller/agent container images
+      4. Emits `latest` tags only for stable releases (never for `-rcN`)
+- [ ] Keep explicit manual control for major/minor changes via a dedicated
+      maintainer-only workflow or PR that edits the central version file,
+      with audit trail in git history.
+- [ ] Define RC generation policy for PRs targeting `main` and implement one
+      of these modes:
+      1. Always build RC artifacts for every PR to `main`
+      2. Build RC artifacts only when a PR has a release-candidate label
+      3. Build lightweight RC binaries by default, and gate expensive RC image
+         builds behind label or manual workflow dispatch
+- [ ] Add branch protection and workflow permissions so release tags are only
+      created by CI on `main` and cannot be overwritten or force-moved.
+- [ ] Document the new release model in `README.md` and `CONTRIBUTING.md`,
+      including examples for major/minor bump operations, RC trigger behavior,
+      and rollback/hotfix handling.
+
+## Phase 5.6 - Alerting expansion
+
+Goal: evolve beyond baseline alert events into a full alerting platform for
+production operators and larger fleets.
+
+- [ ] Robust alerting framework with first-class integrations for common
+      notification targets such as Discord, Slack, Gotify, Notifiarr,
+      Pushbullet, email, Telegram, Signal, and similar services
+- [ ] Alert policies and routing: severity levels, deduplication, quiet
+      hours, maintenance windows, repeat intervals, and
+      per-site/per-node/per-event delivery targets
+
+## Phase 5.7 - Shutdown orchestration
+
+Goal: coordinate safe, policy-driven shutdown workflows for protected systems
+based on battery/runtime signals.
+
+- [ ] Shutdown orchestration for protected systems based on runtime
+      thresholds, battery state, and power-restoration handling
+
+## Phase 5.8 - Historical analytics
+
+Goal: improve long-horizon insight for operators who need advanced reporting
+and capacity planning.
+
+- [ ] Historical analytics for outage frequency, battery/runtime trends, and
+      capacity planning based on real-world load behavior
+
+## Phase 5.9 - Observability export
+
+Goal: provide optional external observability integration for operators who
+run broader monitoring pipelines.
+
+- [ ] Optional observability export via metrics endpoint or push integration
+      for Prometheus and OpenTelemetry-compatible monitoring pipelines
 
 ## Phase 6 — Documentation & roadmap closeout
 
@@ -306,31 +377,8 @@ Not required, keep it cheap:
 - Non-USB UPS transports (SNMP cards) — controller design shouldn't preclude
   it, but don't build it
 - Windows/macOS nodes
-
-## Planned features
-
-High-value features that are likely candidates for future roadmap phases:
-
-- Robust alerting system with first-class integrations for common notification
-      targets such as Discord, Slack, Gotify, Notifiarr, Pushbullet, email,
-      Telegram, Signal, and similar services
-- Alert policies and routing: severity levels, deduplication, quiet hours,
-      maintenance windows, repeat intervals, and per-site/per-node/per-event
-      delivery targets
-- Shutdown orchestration for protected systems based on runtime thresholds,
-      battery state, and power-restoration handling
 - Fleet configuration profiles so groups of nodes can share alert policy,
       retention, update rings, and node-local UI settings
-- Historical analytics for outage frequency, battery/runtime trends, and
-      capacity planning based on real-world load behavior
-- Optional observability export via metrics endpoint or push integration for
-      Prometheus and OpenTelemetry-compatible monitoring pipelines
-
-## Considered features
-
-Useful ideas worth keeping in view, but with lower confidence or less urgency
-than the planned list above:
-
 - Multi-user roles and audit logging for controller actions and node changes
 - Power-event automation hooks for webhooks, scripts, and Home Assistant
       workflows beyond basic alert delivery

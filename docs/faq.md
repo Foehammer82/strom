@@ -39,3 +39,12 @@ Not yet. That integration is planned for a later phase.
 ## What is the current validation target?
 
 The current practical validation path is: flash the node image, boot a Pi Zero 2 W, attach a USB UPS, confirm mDNS advertisement, and confirm remote `upsc` access.
+
+## How do I factory-reset a node?
+
+Two supported paths:
+
+- Runtime reset: `sudo wattkeeper-agent reset` and restart the service.
+- Boot-partition reset: create `wattkeeper-factory-reset` in `/boot/firmware/` (or `/boot/` on older layouts) and boot once.
+
+Both paths clear adoption and controller TLS state. The boot-partition marker path also clears local web auth and persisted UPS naming state so the node returns to first-run bootstrap and pending adoption.

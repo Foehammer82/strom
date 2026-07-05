@@ -24,6 +24,7 @@ This page separates what Wattkeeper ships today from what is still planned.
 - includes the Wattkeeper agent, service units, and udev rules
 - supports Raspberry Pi Imager WiFi and SSH customization
 - runs a first-boot service to set the node hostname and create runtime state
+- supports boot-partition factory reset markers for offline node recovery
 
 ### Controller
 
@@ -32,13 +33,18 @@ This page separates what Wattkeeper ships today from what is still planned.
 - persists node metadata such as display name and location labels
 - polls adopted-node NUT telemetry into SQLite on an interval
 - exposes recent UPS summaries, per-UPS detail/history APIs, and trusted instant commands
+- derives battery runtime-decay trends and replacement estimates from stored UPS runtime history in the UPS detail view
 - evaluates webhook alert rules for on-battery, low-battery, node-offline, and comms-lost conditions
 - serves a GUI-driven React fleet interface with fleet, node, UPS, and alerts views
+- can enable or disable each adopted node local web UI from the controller fleet card
+- can release controller local UI policy so node-local admin control is restored
+- can push signed agent OTA payloads to adopted nodes via the trusted node API
 - re-serves adopted UPS inventory through a controller aggregate NUT listener on `:3493`
   with protocol support for `LIST UPS`, `LIST VAR`, `GET VAR`, `LIST CMD`,
   `GET CMDDESC`, and `INSTCMD`
 - provides a controller settings UI control to enable or disable the aggregate
   NUT listener without restarting the controller
+- supports controller database backup and restore command paths
 
 ### Home Assistant Bridge
 
@@ -51,9 +57,6 @@ This page separates what Wattkeeper ships today from what is still planned.
 
 ### Lifecycle And Hardening
 
-- OTA updates
-- backup and restore flows
-- node reset and recovery paths
 - more long-term operational hardening
 
 ## Compatibility Notes

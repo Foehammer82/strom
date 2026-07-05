@@ -78,7 +78,10 @@ Expected first-boot behavior:
 - there is no username or password creation prompt
 - the hostname becomes `wkeeper-node-<last4 serial>`
 - `/var/lib/wattkeeper` is created
+- OverlayFS is enabled by default for a read-mostly root filesystem
 - the agent starts automatically
+
+The OverlayFS switch can cause one additional reboot during initial setup. If you need writable-root behavior, place a `wattkeeper-overlayfs-disable` file on the boot partition before first boot.
 
 The first browser visit to `http://<pi-ip>/` initializes node-local web access by prompting for a local admin username and password. This is separate from SSH access. After bootstrap, the browser signs in through a session-based flow for the dashboard and detailed status pages.
 
@@ -95,6 +98,7 @@ After boot:
 - verify `curl http://<pi-ip>/status/details` returns the richer local status payload when authenticated through the browser session or other future trusted client flow
 - verify `_wattkeeper._tcp` is advertised
 - verify the UPS appears through NUT from another machine with `upsc <ups-name>@<pi-ip>`
+- optionally verify read-mostly mode with `findmnt -n -o FSTYPE /` returning `overlay`
 
 ## What Comes Next
 

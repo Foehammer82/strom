@@ -57,7 +57,12 @@ Wattkeeper adds a first-boot service that:
 - locks that account password on first boot so password login is not part of the normal workflow
 - sets the hostname to `wkeeper-node-<last4 serial>`
 - creates `/var/lib/wattkeeper`
+- enables Raspberry Pi OverlayFS for a read-mostly root filesystem
 - marks itself complete and disables itself
+
+When OverlayFS is enabled, first boot may include a one-time additional reboot.
+
+To opt out for a specific node, place a `wattkeeper-overlayfs-disable` file on the boot partition before first boot.
 
 ## Local Validation
 
@@ -68,6 +73,7 @@ When working on the image pipeline or Pi provisioning flow, the current validati
 3. Flash the image with Raspberry Pi Imager and apply WiFi customization there. Add SSH public keys only if you want shell access.
 4. Boot a Pi Zero 2 W and attach a USB UPS.
 5. Verify there is no first-boot username or password prompt, then verify hostname rewrite, `/var/lib/wattkeeper` creation, mDNS advertisement, and remote `upsc` access.
+6. Verify OverlayFS is active (`findmnt -n -o FSTYPE /` should report `overlay`) unless you intentionally set `wattkeeper-overlayfs-disable`.
 
 ## Security Notes
 
