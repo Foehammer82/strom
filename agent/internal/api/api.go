@@ -1333,7 +1333,6 @@ func (s *Service) startSession(w http.ResponseWriter, r *http.Request, username 
 			s.auth.ClearSession(strings.TrimSpace(cookie.Value))
 		}
 	}
-	secure := cookieShouldBeSecure(r)
 	token, csrfToken, err := s.auth.CreateSession(username)
 	if err != nil {
 		return err
@@ -1344,7 +1343,7 @@ func (s *Service) startSession(w http.ResponseWriter, r *http.Request, username 
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   secure,
+		Secure:   true,
 		MaxAge:   int(defaultSessionTTL.Seconds()),
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -1353,16 +1352,15 @@ func (s *Service) startSession(w http.ResponseWriter, r *http.Request, username 
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   secure,
+		Secure:   true,
 		MaxAge:   int(defaultSessionTTL.Seconds()),
 	})
 	return nil
 }
 
 func (s *Service) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	secure := cookieShouldBeSecure(r)
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: secure, MaxAge: -1})
-	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: secure, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: true, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: true, MaxAge: -1})
 }
 
 func (s *Service) buildStatusResponse(ctx context.Context) (statusResponse, error) {
