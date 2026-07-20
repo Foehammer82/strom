@@ -299,7 +299,37 @@ is enforced via a repository tag ruleset in GitHub settings (documented in
 `CONTRIBUTING.md`), which is an administrative action outside this repo's
 tracked files.
 
-## Phase 5.6 - Alerting expansion
+## Phase 5.6 - Node image real-hardware validation
+
+Goal: close out the remaining real-hardware risk from Phase 2 and Phase 5 by
+actually flashing and testing a current node image on real Raspberry Pi
+hardware with a real USB UPS attached, before resuming controller-side work.
+This phase is also the holding area for any fixes or follow-up changes
+discovered while doing that validation.
+
+- [ ] Flash a current node image (`dist/wattkeeper-node-<version>.img.xz`)
+      with Raspberry Pi Imager using WiFi + SSH-key customization, per the
+      Phase 2 validation sequence
+- [ ] Boot a real Pi (Zero 2 W or other supported target) and verify
+      first-boot behavior: hostname rewrite to `wkeeper-node-<last4 serial>`,
+      `/var/lib/wattkeeper` creation, and the OverlayFS first-boot reboot
+- [ ] Plug in a real USB UPS and verify zero-config detection: generated
+      `ups.conf`/`upsd.conf`/`upsd.users`, stable UPS naming across reboots,
+      and `nut-server`/`nut-driver@` reload behavior
+- [ ] Verify mDNS discoverability (`avahi-browse _wattkeeper._tcp`) and
+      remote NUT access (`upsc <name>@<pi-ip>`) from another machine
+- [ ] Verify the node local HTTP surface on real hardware: auth bootstrap
+      flow, `GET /status`, `GET /healthz`, and the dashboard UI
+- [ ] Record and fix any bugs, doc gaps, or generated-config issues found
+      during this pass, keeping fixes scoped to what real-hardware testing
+      actually surfaces
+
+**Exit criteria**: a freshly flashed Pi with the current node image meets the
+Phase 1 and Phase 2 exit criteria on real hardware, with no manual
+workarounds, and any issues found along the way are fixed or explicitly
+tracked before moving back to controller-side roadmap work.
+
+## Phase 6 - Alerting expansion
 
 Goal: evolve beyond baseline alert events into a full alerting platform for
 production operators and larger fleets.
@@ -311,7 +341,7 @@ production operators and larger fleets.
       hours, maintenance windows, repeat intervals, and
       per-site/per-node/per-event delivery targets
 
-## Phase 5.7 - Shutdown orchestration
+## Phase 7 - Shutdown orchestration
 
 Goal: coordinate safe, policy-driven shutdown workflows for protected systems
 based on battery/runtime signals.
@@ -319,7 +349,7 @@ based on battery/runtime signals.
 - [ ] Shutdown orchestration for protected systems based on runtime
       thresholds, battery state, and power-restoration handling
 
-## Phase 5.8 - Historical analytics
+## Phase 8 - Historical analytics
 
 Goal: improve long-horizon insight for operators who need advanced reporting
 and capacity planning.
@@ -327,7 +357,7 @@ and capacity planning.
 - [ ] Historical analytics for outage frequency, battery/runtime trends, and
       capacity planning based on real-world load behavior
 
-## Phase 5.9 - Observability export
+## Phase 9 - Observability export
 
 Goal: provide optional external observability integration for operators who
 run broader monitoring pipelines.
@@ -335,7 +365,7 @@ run broader monitoring pipelines.
 - [ ] Optional observability export via metrics endpoint or push integration
       for Prometheus and OpenTelemetry-compatible monitoring pipelines
 
-## Phase 6 — Documentation & roadmap closeout
+## Phase 10 — Documentation & roadmap closeout
 
 - [ ] Update `README.md` so it reflects the shipped architecture, setup flow,
       operational model, and current capabilities rather than planned work
