@@ -1525,7 +1525,6 @@ func TestAdoptionHandshakeAgainstInProcessAgent(t *testing.T) {
 		if _, err := application.adoptNode(context.Background(), httptest.NewRequest(http.MethodPost, "http://controller.local/api/nodes/serial-1234/adopt", nil), node.nodeResponse()); err != nil {
 			t.Fatalf("adoptNode() error = %v", err)
 		}
-		node.bootstrapLocalAuth(t)
 
 		trust, err := store.LoadNodeTrust(context.Background(), "serial-1234")
 		if err != nil {
@@ -1786,28 +1785,4 @@ func (n *inProcessAgentNode) httpURL() string {
 
 func (n *inProcessAgentNode) nodeResponse() nodeResponse {
 	return nodeResponse{ID: "serial-1234", Address: n.host, Port: n.httpPort, Live: true}
-}
-
-func (n *inProcessAgentNode) bootstrapLocalAuth(t *testing.T) {
-	t.Helper()
-	body, err := json.Marshal(map[string]string{"username": "admin", "password": "secret-pass", "confirm_password": "secret-pass"})
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-	req, err := http.NewRequest(http.MethodPost, n.httpURL()+"/auth/bootstrap", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("NewRequest() error = %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-	if err != nil {
-		t.Fatalf("bootstrap request error = %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		payload := new(bytes.Buffer)
-		_, _ = payload.ReadFrom(resp.Body)
-		t.Fatalf("bootstrap status = %d, want %d body=%s", resp.StatusCode, http.StatusCreated, payload.String())
-	}
 }

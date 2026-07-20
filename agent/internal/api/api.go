@@ -215,6 +215,7 @@ type indexViewModel struct {
 	GeneratedAt time.Time
 	Health      healthResponse
 	AuthEnabled bool
+	Username    string
 }
 
 type storedAdoption struct {
@@ -241,6 +242,22 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 			return "unavailable"
 		}
 		return fmt.Sprintf("%.1f C", *value)
+	},
+	"initials": func(name string) string {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			return "?"
+		}
+		fields := strings.Fields(trimmed)
+		first := []rune(fields[0])
+		if len(fields) == 1 {
+			if len(first) == 1 {
+				return strings.ToUpper(string(first))
+			}
+			return strings.ToUpper(string(first[:2]))
+		}
+		last := []rune(fields[len(fields)-1])
+		return strings.ToUpper(string(first[:1]) + string(last[:1]))
 	},
 }).Parse(`<!DOCTYPE html>
 <html lang="en">
@@ -272,6 +289,13 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 				>
 					☰
 				</button>
+				<button id="refresh-indicator" class="refresh-indicator" type="button" aria-label="Refresh dashboard now">
+					<svg class="refresh-ring" viewBox="0 0 36 36" aria-hidden="true">
+						<circle class="refresh-ring-track" cx="18" cy="18" r="15.5"></circle>
+						<circle id="refresh-ring-progress" class="refresh-ring-progress" cx="18" cy="18" r="15.5"></circle>
+					</svg>
+					<span id="refresh-countdown" class="helper" role="status">Loading live metrics&hellip;</span>
+				</button>
 				<div class="profile-menu" id="profile-menu">
 					<button
 						id="profile-menu-toggle"
@@ -281,10 +305,25 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 						aria-expanded="false"
 						aria-haspopup="menu"
 					>
-						<span class="profile-avatar" aria-hidden="true">NA</span>
+						{{if .AuthEnabled}}
+						<span class="profile-avatar" aria-hidden="true">{{initials "Admin"}}</span>
 						<span class="profile-copy">
-							<strong>Node Admin</strong>
+							<strong>Admin</strong>
+							<span class="profile-copy-sub">Signed in</span>
 						</span>
+						{{else}}
+						<span class="profile-avatar profile-avatar--open" aria-hidden="true">
+							<svg viewBox="0 0 24 24" focusable="false">
+								<path d="M7 10.5V8a5 5 0 0 1 9.5-2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+								<rect x="5" y="10.5" width="14" height="9.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+								<circle cx="12" cy="15" r="1.4" fill="currentColor"></circle>
+							</svg>
+						</span>
+						<span class="profile-copy">
+							<strong>Local access</strong>
+							<span class="profile-copy-sub">Auth disabled</span>
+						</span>
+						{{end}}
 					</button>
 					<div id="profile-menu-panel" class="menu-panel" role="menu" aria-label="Profile options" hidden>
 						<div class="menu-section">
@@ -318,7 +357,6 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 		<section class="surface hero">
 			<div class="section-head">
 				<h2>Node overview</h2>
-				<span class="helper">Live metrics and per-UPS controls.</span>
 			</div>
 			<div id="metrics-grid" class="summary-grid">
 				<article class="metric-card"><span class="eyebrow">Version</span><div class="metric-value">{{.Health.Version}}</div></article>
@@ -335,7 +373,6 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 				<section class="surface hero">
 					<div class="section-head">
 						<h2>UPS inventory</h2>
-						<span class="helper">Select any UPS to inspect telemetry and available NUT controls.</span>
 					</div>
 					<div id="ups-grid" class="ups-grid">
 						{{if .Health.UPSes}}
@@ -371,13 +408,20 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 			<span class="eyebrow">Destructive command</span>
 			<h2>Confirm UPS action</h2>
 			<p id="confirm-text" class="helper"></p>
-			<label class="field" for="confirm-input">
-				<span>Type the command exactly to continue</span>
-				<input id="confirm-input" type="text" autocomplete="off">
-			</label>
 			<div class="modal-actions">
 				<button id="confirm-cancel" class="button button--ghost" type="button">Cancel</button>
-				<button id="confirm-submit" class="button button--primary" type="button" disabled>Run command</button>
+				<button id="confirm-submit" class="button button--danger" type="button">Run command</button>
+			</div>
+		</div>
+	</div>
+	<div id="raw-json-modal" class="modal" aria-hidden="true">
+		<div class="surface modal-card modal-card--wide">
+			<span class="eyebrow">Raw variables</span>
+			<h2 id="raw-json-title">Raw NUT variables</h2>
+			<p id="raw-json-subtitle" class="helper"></p>
+			<div class="json-card"><pre id="raw-json-content"></pre></div>
+			<div class="modal-actions">
+				<button id="raw-json-close" class="button button--ghost" type="button">Close</button>
 			</div>
 		</div>
 	</div>
@@ -436,7 +480,7 @@ func New(logger *log.Logger, opts Options) *Service {
 		agentBinary:  strings.TrimSpace(opts.AgentBinary),
 		nutUser:      opts.NUTUser,
 		nutPassword:  opts.NUTPassword,
-		auth:         newAuthManager(opts.DisableAuth, opts.AuthPath),
+		auth:         newAuthManager(opts.DisableAuth, opts.AuthPath, logger),
 		adopter:      opts.Adopter,
 	}
 	service.cache = service.loggingMiddleware(service.routes())
@@ -471,7 +515,6 @@ func (s *Service) routes() http.Handler {
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetFS))))
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/adopt", s.handleAdopt)
-	mux.HandleFunc("/auth/bootstrap", s.handleBootstrap)
 	mux.HandleFunc("/auth/login", s.handleLogin)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 	mux.HandleFunc("/auth/reset", s.handleReset)
@@ -480,6 +523,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("/api/ups/", s.handleAPIUPS)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/ui", s.handleUISetting)
+	mux.HandleFunc("/settings/password", s.handleChangePassword)
 	mux.HandleFunc("/api/settings/ui/policy", s.handleUIPolicy)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
 	mux.HandleFunc("/status", s.handleStatus)
@@ -498,24 +542,13 @@ func (s *Service) handleIndex(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	var username string
 	if s.auth.Enabled() {
-		needsBootstrap, err := s.auth.NeedsBootstrap()
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
+		sessionUsername, ok := s.requireSession(w, r)
+		if !ok {
 			return
 		}
-		if needsBootstrap {
-			token, err := s.issueCSRFToken(w, r)
-			if err != nil {
-				writeJSONError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			s.renderBootstrapPage(w, http.StatusOK, token, "")
-			return
-		}
-		if _, ok := s.requireSession(w, r); !ok {
-			return
-		}
+		username = sessionUsername
 		uiEnabled, err := s.auth.UIEnabled()
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -534,82 +567,9 @@ func (s *Service) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := indexTemplate.Execute(w, indexViewModel{GeneratedAt: time.Now(), Health: response, AuthEnabled: s.auth.Enabled()}); err != nil && s.logger != nil {
+	if err := indexTemplate.Execute(w, indexViewModel{GeneratedAt: time.Now(), Health: response, AuthEnabled: s.auth.Enabled(), Username: username}); err != nil && s.logger != nil {
 		s.logger.Printf("render index failed: %v", err)
 	}
-}
-
-func (s *Service) handleBootstrap(w http.ResponseWriter, r *http.Request) {
-	if !s.auth.Enabled() {
-		writeJSONError(w, http.StatusNotFound, "bootstrap unavailable when http auth is disabled")
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if wantsHTML(r) {
-		if err := s.validateAnonymousCSRF(r); err != nil {
-			token, issueErr := s.issueCSRFToken(w, r)
-			if issueErr != nil {
-				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
-				return
-			}
-			s.renderBootstrapPage(w, http.StatusForbidden, token, err.Error())
-			return
-		}
-	}
-
-	req, err := bootstrapRequestFromRequest(r)
-	if err != nil {
-		if wantsHTML(r) {
-			token, issueErr := s.issueCSRFToken(w, r)
-			if issueErr != nil {
-				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
-				return
-			}
-			s.renderBootstrapPage(w, http.StatusBadRequest, token, err.Error())
-			return
-		}
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if err := s.auth.Bootstrap(req); err != nil {
-		status := http.StatusInternalServerError
-		switch {
-		case errors.Is(err, errAuthAlreadyConfigured):
-			status = http.StatusConflict
-		case errors.Is(err, errAuthDisabled):
-			status = http.StatusNotFound
-		default:
-			if !strings.Contains(err.Error(), ":") && !strings.Contains(err.Error(), "config") {
-				status = http.StatusBadRequest
-			}
-		}
-		if wantsHTML(r) && status == http.StatusBadRequest {
-			token, issueErr := s.issueCSRFToken(w, r)
-			if issueErr != nil {
-				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
-				return
-			}
-			s.renderBootstrapPage(w, status, token, err.Error())
-			return
-		}
-		writeJSONError(w, status, err.Error())
-		return
-	}
-	if err := s.startSession(w, r, strings.TrimSpace(req.Username)); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if wantsHTML(r) {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
 }
 
 func (s *Service) handleAdopt(w http.ResponseWriter, r *http.Request) {
@@ -805,22 +765,97 @@ func (s *Service) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	uiEnabled, err := s.auth.UIEnabled()
+	viewModel, err := s.buildSettingsViewModel(r, username, r.URL.Query().Get("message"), "")
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	s.renderSettingsPage(w, http.StatusOK, viewModel)
+}
+
+// buildSettingsViewModel gathers everything the settings page needs to
+// render, including the current default-password warning state. It is
+// shared by handleSettings and handleChangePassword's error path so the
+// page can be re-rendered consistently after a failed password change.
+func (s *Service) buildSettingsViewModel(r *http.Request, username, message, errMessage string) (settingsViewModel, error) {
+	uiEnabled, err := s.auth.UIEnabled()
+	if err != nil {
+		return settingsViewModel{}, err
 	}
 	uiManaged, err := s.auth.UIManaged()
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-		return
+		return settingsViewModel{}, err
 	}
 	csrfToken, err := s.auth.SessionCSRFToken(r)
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		return settingsViewModel{}, err
+	}
+	return settingsViewModel{
+		Username:             username,
+		UIEnabled:            uiEnabled,
+		UIManaged:            uiManaged,
+		UsingDefaultPassword: s.auth.UsingDefaultPassword(),
+		Message:              message,
+		Error:                errMessage,
+		CSRFToken:            csrfToken,
+	}, nil
+}
+
+func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	s.renderSettingsPage(w, http.StatusOK, settingsViewModel{Username: username, UIEnabled: uiEnabled, UIManaged: uiManaged, Message: r.URL.Query().Get("message"), CSRFToken: csrfToken})
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
+	username, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	req, err := changePasswordRequestFromRequest(r)
+	if err != nil {
+		s.respondSettingsError(w, r, username, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.NewPassword != req.ConfirmPassword {
+		s.respondSettingsError(w, r, username, http.StatusBadRequest, "new passwords do not match")
+		return
+	}
+	if err := s.auth.ChangePassword(req.CurrentPassword, req.NewPassword); err != nil {
+		status := http.StatusBadRequest
+		message := err.Error()
+		if errors.Is(err, errInvalidCredentials) {
+			status = http.StatusUnauthorized
+			message = "current password is incorrect"
+		}
+		s.respondSettingsError(w, r, username, status, message)
+		return
+	}
+	if wantsHTML(r) {
+		http.Redirect(w, r, "/settings?message=password-updated", http.StatusSeeOther)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "password-updated"})
+}
+
+// respondSettingsError re-renders the settings page with an error message
+// for HTML clients, or writes a plain JSON error for API clients.
+func (s *Service) respondSettingsError(w http.ResponseWriter, r *http.Request, username string, status int, message string) {
+	if !wantsHTML(r) {
+		writeJSONError(w, status, message)
+		return
+	}
+	viewModel, err := s.buildSettingsViewModel(r, username, "", message)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.renderSettingsPage(w, status, viewModel)
 }
 
 func (s *Service) handleUISetting(w http.ResponseWriter, r *http.Request) {
@@ -1191,18 +1226,11 @@ func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) renderBootstrapPage(w http.ResponseWriter, status int, csrfToken, message string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	if err := bootstrapTemplate.Execute(w, bootstrapViewModel{Error: message, CSRFToken: csrfToken}); err != nil && s.logger != nil {
-		s.logger.Printf("render bootstrap failed: %v", err)
-	}
-}
-
 func (s *Service) renderLoginPage(w http.ResponseWriter, status int, csrfToken, message string, uiDisabled bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := loginTemplate.Execute(w, loginViewModel{Error: message, UIDisabled: uiDisabled, CSRFToken: csrfToken}); err != nil && s.logger != nil {
+	viewModel := loginViewModel{Error: message, UIDisabled: uiDisabled, DefaultPasswordWarning: s.auth.UsingDefaultPassword(), CSRFToken: csrfToken}
+	if err := loginTemplate.Execute(w, viewModel); err != nil && s.logger != nil {
 		s.logger.Printf("render login failed: %v", err)
 	}
 }
@@ -1218,24 +1246,6 @@ func (s *Service) renderSettingsPage(w http.ResponseWriter, status int, viewMode
 func (s *Service) requireSession(w http.ResponseWriter, r *http.Request) (string, bool) {
 	if !s.auth.Enabled() {
 		return "", true
-	}
-	needsBootstrap, err := s.auth.NeedsBootstrap()
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-		return "", false
-	}
-	if needsBootstrap {
-		if wantsHTML(r) {
-			token, issueErr := s.issueCSRFToken(w, r)
-			if issueErr != nil {
-				writeJSONError(w, http.StatusInternalServerError, issueErr.Error())
-				return "", false
-			}
-			s.renderBootstrapPage(w, http.StatusOK, token, "")
-		} else {
-			writeJSONError(w, http.StatusServiceUnavailable, errAuthNotConfigured.Error())
-		}
-		return "", false
 	}
 	username, err := s.auth.SessionUsername(r)
 	if err != nil {
@@ -2018,25 +2028,6 @@ func wantsHTML(r *http.Request) bool {
 	return strings.HasPrefix(contentType, "application/x-www-form-urlencoded") || strings.HasPrefix(contentType, "multipart/form-data")
 }
 
-func bootstrapRequestFromRequest(r *http.Request) (bootstrapRequest, error) {
-	contentType := strings.ToLower(r.Header.Get("Content-Type"))
-	if strings.HasPrefix(contentType, "application/json") {
-		var req bootstrapRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			return bootstrapRequest{}, fmt.Errorf("decode bootstrap request: %w", err)
-		}
-		return req, nil
-	}
-	if err := r.ParseForm(); err != nil {
-		return bootstrapRequest{}, fmt.Errorf("parse bootstrap form: %w", err)
-	}
-	return bootstrapRequest{
-		Username:        r.FormValue("username"),
-		Password:        r.FormValue("password"),
-		ConfirmPassword: r.FormValue("confirm_password"),
-	}, nil
-}
-
 func loginRequestFromRequest(r *http.Request) (loginRequest, error) {
 	contentType := strings.ToLower(r.Header.Get("Content-Type"))
 	if strings.HasPrefix(contentType, "application/json") {
@@ -2074,6 +2065,25 @@ func enabledFlagFromRequest(r *http.Request) (bool, error) {
 	default:
 		return false, errors.New("enabled must be true or false")
 	}
+}
+
+func changePasswordRequestFromRequest(r *http.Request) (changePasswordRequest, error) {
+	contentType := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.HasPrefix(contentType, "application/json") {
+		var req changePasswordRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return changePasswordRequest{}, fmt.Errorf("decode change password request: %w", err)
+		}
+		return req, nil
+	}
+	if err := r.ParseForm(); err != nil {
+		return changePasswordRequest{}, fmt.Errorf("parse change password form: %w", err)
+	}
+	return changePasswordRequest{
+		CurrentPassword: r.FormValue("current_password"),
+		NewPassword:     r.FormValue("new_password"),
+		ConfirmPassword: r.FormValue("confirm_password"),
+	}, nil
 }
 
 func defaultString(value, fallback string) string {

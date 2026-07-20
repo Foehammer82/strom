@@ -2,7 +2,7 @@
 
 The agent runs on a Raspberry Pi node, manages local NUT configuration, advertises itself over mDNS, and serves a local node dashboard plus status API on port 80 by default.
 
-By default, the node dashboard and detailed status routes require a first-run bootstrap to create a local admin account, followed by session-based sign-in in the browser. Only `GET /status` remains public.
+By default, the node dashboard and detailed status routes require session-based sign-in with a single local `admin` account, which is auto-provisioned the first time the agent starts (no manual bootstrap step). Only `GET /status` remains public.
 
 ## Manual Test Steps
 
@@ -61,13 +61,14 @@ upsc <stable-ups-name>@<pi-ip>
 
 The public status response should stay minimal: overall node status and UPS count only. The browser dashboard at `/`, `GET /status/details`, and `GET /healthz` carry the richer node details used for local troubleshooting and future authenticated access.
 
-On a fresh node, the first browser visit to `/` prompts for local admin creation. After that, `/`, `/status/details`, `/healthz`, and `/settings` use a session cookie set by the sign-in flow unless the process is explicitly started with `--http-auth=false`.
+On a fresh node, the `admin` account is created automatically on first start. If `AGENT_ADMIN_PASSWORD` is not set, the account uses a built-in default password and the agent logs a startup warning; the login and settings pages also show a visible security warning until the password is changed (via `/settings`) or `AGENT_ADMIN_PASSWORD` is set. After signing in, `/`, `/status/details`, `/healthz`, and `/settings` use a session cookie unless the process is explicitly started with `--http-auth=false`.
 
 Node-local auth contract:
 
-- Browser HTML form flows (`/auth/bootstrap`, `/auth/login`, `/auth/logout`, `/auth/reset`, `/settings/ui`) require a CSRF token (`csrf_token` form field or `X-CSRF-Token` header).
-- JSON API clients can bootstrap/login with `Content-Type: application/json` and then use the returned `wattkeeper_session` cookie for authenticated endpoints (`/status/details`, `/healthz`, and protected `/api/*` routes).
-- Session cookies expire after the configured session TTL (12h by default), and successful bootstrap/login rotates any existing session token.
+- Browser HTML form flows (`/auth/login`, `/auth/logout`, `/auth/reset`, `/settings/ui`, `/settings/password`) require a CSRF token (`csrf_token` form field or `X-CSRF-Token` header).
+- JSON API clients can log in with `Content-Type: application/json` and then use the returned `wattkeeper_session` cookie for authenticated endpoints (`/status/details`, `/healthz`, and protected `/api/*` routes).
+- Session cookies expire after the configured session TTL (12h by default), and a successful login rotates any existing session token.
+- Resetting local auth (`/auth/reset`) clears the current admin account and all sessions, then immediately re-provisions the `admin` account (using `AGENT_ADMIN_PASSWORD` if set, otherwise the built-in default) so the node never requires a manual recovery step.
 - When requests arrive over TLS (or `X-Forwarded-Proto: https`), auth and CSRF cookies are emitted with `Secure` in addition to `HttpOnly` and `SameSite=Strict`.
 
 The settings page lets the local admin sign out, reset node-local web auth, and toggle the local dashboard on or off.
