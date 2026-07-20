@@ -2110,16 +2110,6 @@ func (s *Service) issueCSRFToken(w http.ResponseWriter, r *http.Request) (string
 	return token, nil
 }
 
-func cookieShouldBeSecure(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	if r.TLS != nil {
-		return true
-	}
-	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
-}
-
 func (s *Service) validateAnonymousCSRF(r *http.Request) error {
 	requestToken, err := csrfTokenFromRequest(r)
 	if err != nil {
