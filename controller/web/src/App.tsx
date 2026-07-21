@@ -13,8 +13,8 @@ import AlertsPage from "./pages/AlertsPage";
 import SettingsPage from "./pages/SettingsPage";
 import type { ConfirmRequest, ThemePreference, ToastRequest, ToastSeverity } from "./types";
 
-const THEME_PREF_STORAGE_KEY = "wattkeeper-theme-preference";
-const LEGACY_THEME_STORAGE_KEY = "wattkeeper-theme";
+const THEME_PREF_STORAGE_KEY = "strom-theme-preference";
+const LEGACY_THEME_STORAGE_KEY = "strom-theme";
 
 function normalizeThemePreference(value: string | null): ThemePreference | null {
   if (value === "system" || value === "light" || value === "dark") {
@@ -91,10 +91,10 @@ function App() {
       >
         <Toolbar sx={{ justifyContent: "space-between", gap: 2, flexWrap: "wrap", py: 1.5 }}>
           <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-            <Box component="img" src="/logo.svg" alt="Wattkeeper logo" sx={{ width: 40, height: 40, display: "block" }} />
+            <Box component="img" src="/logo.svg" alt="Strom logo" sx={{ width: 40, height: 40, display: "block" }} />
             <Stack spacing={0} sx={{ justifyContent: "center" }}>
               <Typography variant="h5" component="h1" sx={{ m: 0, fontWeight: 700, lineHeight: 1.2 }}>
-                Wattkeeper
+                Strom
               </Typography>
               <Typography
                 variant="overline"

@@ -20,8 +20,8 @@ SIM_SCENARIOS = ROOT / "sim" / "scenarios"
 VERSION_TOML = ROOT / ".github" / "release" / "version.toml"
 UV = os.environ.get("UV", "uv")
 
-AGENT_BIN = "wattkeeper-agent"
-CONTROLLER_BIN = "wattkeeper-controller"
+AGENT_BIN = "strom-agent"
+CONTROLLER_BIN = "strom-controller"
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -168,8 +168,8 @@ def release_agent_artifacts(version: str) -> None:
         install_script = deploy_dir / "install.sh"
         shutil.copy2(ROOT / "deploy" / "install.sh", install_script)
         os.chmod(install_script, 0o755)
-        shutil.copy2(ROOT / "deploy" / "wattkeeper-agent.service", deploy_dir / "wattkeeper-agent.service")
-        shutil.copy2(ROOT / "deploy" / "99-wattkeeper-agent.rules", deploy_dir / "99-wattkeeper-agent.rules")
+        shutil.copy2(ROOT / "deploy" / "strom-agent.service", deploy_dir / "strom-agent.service")
+        shutil.copy2(ROOT / "deploy" / "99-strom-agent.rules", deploy_dir / "99-strom-agent.rules")
 
         archive_name = f"{AGENT_BIN}-{version}-{arch}.tar.gz"
         archive_path = RELEASE_DIR / archive_name
@@ -212,8 +212,8 @@ def sim_up(replicas: int, version: str, include_ha: bool) -> None:
     args = compose_args()
     if include_ha:
         args.extend(["--profile", "ha"])
-    args.extend(["up", "-d", "--build", "--scale", f"wattkeeper-agent={replicas}"])
-    discovery_seeds = ",".join(f"sim-wattkeeper-agent-{index}:80" for index in range(1, replicas + 1))
+    args.extend(["up", "-d", "--build", "--scale", f"strom-agent={replicas}"])
+    discovery_seeds = ",".join(f"sim-strom-agent-{index}:80" for index in range(1, replicas + 1))
     run_command(args, env={"VERSION": version, "DISCOVERY_SEEDS": discovery_seeds})
 
 
@@ -352,7 +352,7 @@ def image_node(
     version: str = typer.Option(default_factory=default_version, help="Image version tag"),
     continue_build: bool = typer.Option(False, "--continue", help="Reuse preserved pi-gen state"),
 ) -> None:
-    """Build Wattkeeper node image artifacts."""
+    """Build Strom node image artifacts."""
     build_image(version, continue_build)
 
 
@@ -362,7 +362,7 @@ def image_controller(
     image: str | None = typer.Option(None, help="Image name override"),
 ) -> None:
     """Build single-arch controller image."""
-    image_name = image or f"wattkeeper-controller:{version}"
+    image_name = image or f"strom-controller:{version}"
     run_command(
         [
             "docker",
@@ -384,7 +384,7 @@ def image_controller_multiarch(
     image: str | None = typer.Option(None, help="Image name override"),
 ) -> None:
     """Build multi-arch controller image with buildx."""
-    image_name = image or f"ghcr.io/foehammer82/wattkeeper-controller:{version}"
+    image_name = image or f"ghcr.io/foehammer82/strom-controller:{version}"
     run_command(
         [
             "docker",
@@ -409,7 +409,7 @@ def image_agent(
     image: str | None = typer.Option(None, help="Image name override"),
 ) -> None:
     """Build single-arch agent image."""
-    image_name = image or f"wattkeeper-agent:{version}"
+    image_name = image or f"strom-agent:{version}"
     run_command(
         [
             "docker",
@@ -431,7 +431,7 @@ def image_agent_multiarch(
     image: str | None = typer.Option(None, help="Image name override"),
 ) -> None:
     """Build multi-arch agent image with buildx."""
-    image_name = image or f"ghcr.io/foehammer82/wattkeeper-agent:{version}"
+    image_name = image or f"ghcr.io/foehammer82/strom-agent:{version}"
     run_command(
         [
             "docker",
@@ -613,16 +613,16 @@ def run_app(argv: list[str], prog_name: str) -> int:
     return 0
 
 
-def wk_entrypoint() -> int:
-    return run_app(list(sys.argv[1:]), "wk")
+def strom_entrypoint() -> int:
+    return run_app(list(sys.argv[1:]), "strom")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     prog_name = "python -m tools"
-    if args and args[0] == "wk":
+    if args and args[0] == "strom":
         args = args[1:]
-        prog_name = "wk"
+        prog_name = "strom"
     return run_app(args, prog_name)
 
 

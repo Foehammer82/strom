@@ -1,6 +1,6 @@
 const POLL_INTERVAL_MS = 15000;
-const THEME_PREF_STORAGE_KEY = "wattkeeper-theme-preference";
-const LEGACY_THEME_STORAGE_KEY = "wattkeeper-theme";
+const THEME_PREF_STORAGE_KEY = "strom-theme-preference";
+const LEGACY_THEME_STORAGE_KEY = "strom-theme";
 const prefersDarkMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
 const state = {
@@ -538,7 +538,7 @@ function renderDetail() {
       <a href="/status">Public status</a>
       <a href="/status/details">Detailed JSON</a>
       <a href="/healthz">Health payload</a>
-      <a href="https://foehammer82.github.io/wattkeeper/getting-started/" target="_blank" rel="noreferrer">Docs</a>
+      <a href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer">Docs</a>
     </div>
   `;
 

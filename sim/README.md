@@ -1,10 +1,10 @@
-# Wattkeeper Simulation Rig
+# Strom Simulation Rig
 
-The simulation rig runs containerized Wattkeeper services with fake UPS fixtures.
+The simulation rig runs containerized Strom services with fake UPS fixtures.
 
 Default topology:
-- N replicas of `wattkeeper-agent` (2 by default)
-- One `wattkeeper-controller`
+- N replicas of `strom-agent` (2 by default)
+- One `strom-controller`
 - One Mosquitto broker
 - Optional Home Assistant service behind the `ha` compose profile
 
@@ -16,21 +16,21 @@ host port in the `18080-18179` range.
 From the repository root:
 
 ```sh
-uv run wk sim up --replicas 2
-uv run wk sim scenario ci-smoke --replicas 2
-uv run wk sim scenario on_battery --replicas 2
-uv run wk sim scenario restore --replicas 2
-uv run wk sim scenario node_loss --replicas 2
-uv run wk sim scenario multi_ups --replicas 2
-uv run wk sim down
+uv run strom sim up --replicas 2
+uv run strom sim scenario ci-smoke --replicas 2
+uv run strom sim scenario on_battery --replicas 2
+uv run strom sim scenario restore --replicas 2
+uv run strom sim scenario node_loss --replicas 2
+uv run strom sim scenario multi_ups --replicas 2
+uv run strom sim down
 ```
 
 Find the current host port mapping for each agent replica:
 
 ```sh
-uv run wk sim ps
+uv run strom sim ps
 # or
-docker compose -f sim/docker-compose.yml ps wattkeeper-agent
+docker compose -f sim/docker-compose.yml ps strom-agent
 ```
 
 Then open each mapped host port in your browser, for example:
@@ -44,7 +44,7 @@ and `INSTCMD` against the simulated adopted fleet.
 Enable Home Assistant in the same stack:
 
 ```sh
-docker compose -f sim/docker-compose.yml --profile ha up -d --build --scale wattkeeper-agent=2
+docker compose -f sim/docker-compose.yml --profile ha up -d --build --scale strom-agent=2
 ```
 
 ## mDNS caveat

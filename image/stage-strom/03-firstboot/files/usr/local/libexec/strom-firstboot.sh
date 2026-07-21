@@ -2,14 +2,14 @@
 set -eu
 
 overlay_opt_out=''
-for marker in /boot/firmware/wattkeeper-overlayfs-disable /boot/wattkeeper-overlayfs-disable; do
+for marker in /boot/firmware/strom-overlayfs-disable /boot/strom-overlayfs-disable; do
 	if [ -f "$marker" ]; then
 		overlay_opt_out="$marker"
 		break
 	fi
 done
 
-install -d -m 0755 /var/lib/wattkeeper
+install -d -m 0755 /var/lib/strom
 
 serial=''
 if [ -r /sys/firmware/devicetree/base/serial-number ]; then
@@ -25,10 +25,10 @@ if [ -z "$suffix" ]; then
 	suffix=0000
 fi
 
-hostname="wkeeper-node-$suffix"
+hostname="strom-node-$suffix"
 
-if id -u wattkeeper >/dev/null 2>&1; then
-	passwd -l wattkeeper >/dev/null 2>&1 || true
+if id -u strom >/dev/null 2>&1; then
+	passwd -l strom >/dev/null 2>&1 || true
 fi
 
 if command -v hostnamectl >/dev/null 2>&1; then
@@ -47,10 +47,10 @@ else
 fi
 
 # Enable Raspberry Pi OverlayFS by default to reduce SD card wear from steady writes.
-# Place /boot/firmware/wattkeeper-overlayfs-disable before first boot to opt out.
-if [ ! -f /var/lib/wattkeeper/.overlayfs-enabled ] && [ -z "$overlay_opt_out" ] && command -v raspi-config >/dev/null 2>&1; then
+# Place /boot/firmware/strom-overlayfs-disable before first boot to opt out.
+if [ ! -f /var/lib/strom/.overlayfs-enabled ] && [ -z "$overlay_opt_out" ] && command -v raspi-config >/dev/null 2>&1; then
 	if raspi-config nonint do_overlayfs 0 >/dev/null 2>&1; then
-		touch /var/lib/wattkeeper/.overlayfs-enabled
+		touch /var/lib/strom/.overlayfs-enabled
 		sync
 		if systemctl --no-block reboot >/dev/null 2>&1; then
 			exit 0
@@ -61,6 +61,6 @@ if [ ! -f /var/lib/wattkeeper/.overlayfs-enabled ] && [ -z "$overlay_opt_out" ] 
 	fi
 fi
 
-touch /var/lib/wattkeeper/.firstboot-complete
+touch /var/lib/strom/.firstboot-complete
 
-systemctl disable wattkeeper-firstboot.service >/dev/null 2>&1 || true
+systemctl disable strom-firstboot.service >/dev/null 2>&1 || true

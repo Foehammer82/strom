@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	internalapi "github.com/Foehammer82/wattkeeper/agent/internal/api"
+	internalapi "github.com/Foehammer82/strom/agent/internal/api"
 )
 
 type AdoptRequest = internalapi.AdoptRequest

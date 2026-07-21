@@ -1,9 +1,9 @@
-module github.com/Foehammer82/wattkeeper/controller
+module github.com/Foehammer82/strom/controller
 
 go 1.26.0
 
 require (
-	github.com/Foehammer82/wattkeeper/agent v0.0.0-20260704053810-6c612f350127
+	github.com/Foehammer82/strom/agent v0.0.0-20260704053810-6c612f350127
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/grandcat/zeroconf v1.0.0
 	modernc.org/sqlite v1.39.0
@@ -26,3 +26,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace github.com/Foehammer82/strom/agent => ../agent

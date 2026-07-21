@@ -23,13 +23,13 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Foehammer82/wattkeeper/agent/nodeapi"
-	"github.com/Foehammer82/wattkeeper/controller/internal/aggregatenut"
-	"github.com/Foehammer82/wattkeeper/controller/internal/alerts"
-	"github.com/Foehammer82/wattkeeper/controller/internal/browse"
-	"github.com/Foehammer82/wattkeeper/controller/internal/ca"
-	"github.com/Foehammer82/wattkeeper/controller/internal/registry"
-	"github.com/Foehammer82/wattkeeper/controller/internal/securestore"
+	"github.com/Foehammer82/strom/agent/nodeapi"
+	"github.com/Foehammer82/strom/controller/internal/aggregatenut"
+	"github.com/Foehammer82/strom/controller/internal/alerts"
+	"github.com/Foehammer82/strom/controller/internal/browse"
+	"github.com/Foehammer82/strom/controller/internal/ca"
+	"github.com/Foehammer82/strom/controller/internal/registry"
+	"github.com/Foehammer82/strom/controller/internal/securestore"
 )
 
 func TestAdoptNodeCallsAgentAndMarksRegistryAdopted(t *testing.T) {
@@ -87,8 +87,8 @@ func TestAdoptNodeCallsAgentAndMarksRegistryAdopted(t *testing.T) {
 	defer store.Close()
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     port,
 		Version:  "v0.3.0",
@@ -164,7 +164,7 @@ func TestPushTrustedAgentUpdateAppliesSignedBinaryOnNode(t *testing.T) {
 		t.Fatalf("adoptNode() error = %v", err)
 	}
 
-	updatePayloadPath := filepath.Join(t.TempDir(), "wattkeeper-agent-update")
+	updatePayloadPath := filepath.Join(t.TempDir(), "strom-agent-update")
 	updateContent := []byte("updated-agent-binary")
 	if err := os.WriteFile(updatePayloadPath, updateContent, 0o755); err != nil {
 		t.Fatalf("write update payload: %v", err)
@@ -397,8 +397,8 @@ func TestSyncLiveNodesPreservesPersistedAdoptedState(t *testing.T) {
 
 	setBrowserSnapshot(t, application.browser, browse.LiveNode{
 		ID:       "serial-1234",
-		Instance: "seed-wattkeeper-agent",
-		Hostname: "wattkeeper-agent",
+		Instance: "seed-strom-agent",
+		Hostname: "strom-agent",
 		Address:  "172.20.0.2",
 		Port:     80,
 		Version:  "dev",
@@ -615,8 +615,8 @@ func TestHandleUpdateNodeMetadataPushesLocalUIPolicyToLiveAdoptedNode(t *testing
 	host, _, _ := strings.Cut(hostPort, ":")
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -633,8 +633,8 @@ func TestHandleUpdateNodeMetadataPushesLocalUIPolicyToLiveAdoptedNode(t *testing
 	}
 	setBrowserSnapshot(t, application.browser, browse.LiveNode{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -686,8 +686,8 @@ func TestHandleUpdateNodeMetadataPushesLocalUIPolicyReleaseToLiveAdoptedNode(t *
 	host, _, _ := strings.Cut(hostPort, ":")
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -707,8 +707,8 @@ func TestHandleUpdateNodeMetadataPushesLocalUIPolicyReleaseToLiveAdoptedNode(t *
 	}
 	setBrowserSnapshot(t, application.browser, browse.LiveNode{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -744,8 +744,8 @@ func TestHandleUpdateNodeMetadataRollsBackLocalUIPolicyWhenTrustedPushFails(t *t
 	host, _, _ := strings.Cut(hostPort, ":")
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -765,8 +765,8 @@ func TestHandleUpdateNodeMetadataRollsBackLocalUIPolicyWhenTrustedPushFails(t *t
 	}
 	setBrowserSnapshot(t, application.browser, browse.LiveNode{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -800,8 +800,8 @@ func TestBuildNodeResponsesSyncsLiveDiscoveryIntoRegistry(t *testing.T) {
 	liveSeen := time.Date(2026, 7, 3, 14, 30, 0, 0, time.UTC)
 	setBrowserSnapshot(t, application.browser, browse.LiveNode{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-lab",
-		Hostname: "wkeeper-node-lab.local",
+		Instance: "strom-node-lab",
+		Hostname: "strom-node-lab.local",
 		Address:  "192.168.1.55",
 		Port:     8080,
 		Version:  "v0.3.1",
@@ -820,14 +820,14 @@ func TestBuildNodeResponsesSyncsLiveDiscoveryIntoRegistry(t *testing.T) {
 	if nodes[0].Status != "pending" || !nodes[0].Live {
 		t.Fatalf("node = %#v, want live pending node", nodes[0])
 	}
-	if nodes[0].Instance != "wkeeper-node-lab" || nodes[0].Address != "192.168.1.55" || nodes[0].Port != 8080 || nodes[0].UPSCount != 3 {
+	if nodes[0].Instance != "strom-node-lab" || nodes[0].Address != "192.168.1.55" || nodes[0].Port != 8080 || nodes[0].UPSCount != 3 {
 		t.Fatalf("node = %#v, want refreshed discovery fields", nodes[0])
 	}
 	stored, err := store.GetNode(context.Background(), "serial-1234")
 	if err != nil {
 		t.Fatalf("GetNode() error = %v", err)
 	}
-	if stored.Instance != "wkeeper-node-lab" || stored.Address != "192.168.1.55" || !stored.LastSeen.Equal(liveSeen) {
+	if stored.Instance != "strom-node-lab" || stored.Address != "192.168.1.55" || !stored.LastSeen.Equal(liveSeen) {
 		t.Fatalf("stored node = %#v, want registry refreshed from live discovery", stored)
 	}
 }
@@ -841,8 +841,8 @@ func TestBuildNodeResponsesPreservesStoredAdoptionDuringReconciliation(t *testin
 	}
 	setBrowserSnapshot(t, application.browser, browse.LiveNode{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  "192.168.1.50",
 		Port:     80,
 		Version:  "v0.3.0",
@@ -1126,8 +1126,8 @@ func TestHandleNodeUPSReturnsLiveTrustedDetailAndRunsCommand(t *testing.T) {
 	host, _, _ := strings.Cut(hostPort, ":")
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -1147,8 +1147,8 @@ func TestHandleNodeUPSReturnsLiveTrustedDetailAndRunsCommand(t *testing.T) {
 	}
 	setBrowserSnapshot(t, application.browser, browse.LiveNode{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -1339,8 +1339,8 @@ func TestAggregateNUTProtocolListsUPSAndRunsTrustedInstcmd(t *testing.T) {
 	host, _, _ := strings.Cut(hostPort, ":")
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     80,
 		Version:  "v0.3.0",
@@ -1586,8 +1586,8 @@ func newTestAppWithDiscoveredNode(t *testing.T, agentURL string, tlsAgent *httpt
 	t.Cleanup(func() { _ = store.Close() })
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  host,
 		Port:     port,
 		Version:  "v0.3.0",
@@ -1728,7 +1728,7 @@ func newInProcessAgentNode(t *testing.T) *inProcessAgentNode {
 	reloader := &noopReloader{}
 	adopted := &adoptedRecorder{}
 	adoptionPath := filepath.Join(tempDir, "adoption.json")
-	agentBinaryPath := filepath.Join(tempDir, "wattkeeper-agent")
+	agentBinaryPath := filepath.Join(tempDir, "strom-agent")
 	if err := os.WriteFile(agentBinaryPath, []byte("original-agent-binary"), 0o755); err != nil {
 		t.Fatalf("write test agent binary: %v", err)
 	}

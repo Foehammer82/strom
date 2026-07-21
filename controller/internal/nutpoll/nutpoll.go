@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/controller/internal/registry"
-	"github.com/Foehammer82/wattkeeper/controller/internal/securestore"
+	"github.com/Foehammer82/strom/controller/internal/registry"
+	"github.com/Foehammer82/strom/controller/internal/securestore"
 )
 
 const defaultNUTPort = 3493

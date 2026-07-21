@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
+	"github.com/Foehammer82/strom/agent/internal/nutconf"
 )
 
 type Reloader interface {
@@ -204,7 +204,7 @@ func ensureNodeCertificate(serial, certPath, keyPath string) (string, error) {
 	}
 	certificateTemplate := &x509.Certificate{
 		SerialNumber:          serialNumber,
-		Subject:               pkix.Name{CommonName: "wattkeeper-node-" + serial},
+		Subject:               pkix.Name{CommonName: "strom-node-" + serial},
 		NotBefore:             time.Now().Add(-1 * time.Hour).UTC(),
 		NotAfter:              time.Now().AddDate(5, 0, 0).UTC(),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

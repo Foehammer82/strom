@@ -46,21 +46,21 @@ jobs:
         run: uv python install
 
       - name: Test
-        run: uv run wk check test
+        run: uv run strom check test
 
       - name: Compute release-candidate version
         id: version
-        run: uv run wk release next-version --rc --github-output
+        run: uv run strom release next-version --rc --github-output
 
       - name: Build release-candidate agent artifacts
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: uv run wk release agent --version "$VERSION"
+        run: uv run strom release agent --version "$VERSION"
 
       - name: Upload agent RC artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wattkeeper-agent-${{ steps.version.outputs.version }}
+          name: strom-agent-${{ steps.version.outputs.version }}
           path: dist/release/
           retention-days: 14
 

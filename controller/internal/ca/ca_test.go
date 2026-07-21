@@ -37,7 +37,7 @@ func TestSignSHA256DigestProducesVerifiableSignature(t *testing.T) {
 		t.Fatalf("Ensure() error = %v", err)
 	}
 
-	digest := sha256.Sum256([]byte("wattkeeper-ota-payload"))
+	digest := sha256.Sum256([]byte("strom-ota-payload"))
 	signature, err := authority.SignSHA256Digest(digest[:])
 	if err != nil {
 		t.Fatalf("SignSHA256Digest() error = %v", err)

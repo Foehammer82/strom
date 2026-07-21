@@ -122,7 +122,7 @@ func TestPublisherPublishesDiscoveryOnceAndStateOnChangeOrHeartbeat(t *testing.T
 		t.Fatalf("publish count = %d, want heartbeat republish after interval", len(client.publishes))
 	}
 
-	controllerAvailabilityTopic := "wattkeeper/controller/availability"
+	controllerAvailabilityTopic := "strom/controller/availability"
 	if countPublishesForTopic(client.publishes, controllerAvailabilityTopic) < 2 {
 		t.Fatalf("controller availability publishes = %d, want heartbeat republish", countPublishesForTopic(client.publishes, controllerAvailabilityTopic))
 	}
@@ -154,7 +154,7 @@ func TestPublisherSubscribesToCommandTopicsAndDispatchesKnownCommands(t *testing
 	now := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
 	commandCalls := make(chan CommandRequest, 1)
 	publisher := NewTestPublisher(RuntimeConfig{
-		StatePrefix: "wattkeeper",
+		StatePrefix: "strom",
 		CommandHandler: func(_ context.Context, request CommandRequest) error {
 			commandCalls <- request
 			return nil
@@ -183,11 +183,11 @@ func TestPublisherSubscribesToCommandTopicsAndDispatchesKnownCommands(t *testing
 	if len(client.subscribes) != 1 {
 		t.Fatalf("subscribe count = %d, want 1", len(client.subscribes))
 	}
-	if len(client.subscribes[0].Subscriptions) != 1 || client.subscribes[0].Subscriptions[0].Topic != "wattkeeper/nodes/+/ups/+/command" {
+	if len(client.subscribes[0].Subscriptions) != 1 || client.subscribes[0].Subscriptions[0].Topic != "strom/nodes/+/ups/+/command" {
 		t.Fatalf("subscriptions = %#v, want command wildcard topic", client.subscribes[0].Subscriptions)
 	}
 
-	client.emit("wattkeeper/nodes/serial_1234/ups/ups_a/command", []byte("test.battery.start.quick"))
+	client.emit("strom/nodes/serial_1234/ups/ups_a/command", []byte("test.battery.start.quick"))
 	select {
 	case call := <-commandCalls:
 		if call.NodeID != "serial-1234" || call.UPSName != "ups-a" || call.Command != "test.battery.start.quick" {
@@ -197,7 +197,7 @@ func TestPublisherSubscribesToCommandTopicsAndDispatchesKnownCommands(t *testing
 		t.Fatal("timed out waiting for command handler call")
 	}
 
-	client.emit("wattkeeper/nodes/serial_1234/ups/ups_a/command", []byte("unknown.command"))
+	client.emit("strom/nodes/serial_1234/ups/ups_a/command", []byte("unknown.command"))
 	select {
 	case unexpected := <-commandCalls:
 		t.Fatalf("unexpected command handler call = %#v", unexpected)

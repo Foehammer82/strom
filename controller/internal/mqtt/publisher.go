@@ -87,7 +87,7 @@ func NewPublisher(ctx context.Context, logger *log.Logger, cfg RuntimeConfig) (*
 	}
 	clientID := strings.TrimSpace(cfg.ClientID)
 	if clientID == "" {
-		clientID = "wattkeeper-controller"
+		clientID = "strom-controller"
 	}
 	cm, err := autopaho.NewConnection(ctx, autopaho.ClientConfig{
 		ServerUrls:                    []*url.URL{serverURL},

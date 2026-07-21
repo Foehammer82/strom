@@ -1,24 +1,24 @@
-# Wattkeeper — Roadmap
+# Strom — Roadmap
 
 Distributed UPS monitoring and management. UniFi-style controller/adopt model:
 cheap Pi Zero 2 W nodes run NUT and auto-configure any USB UPS plugged into them,
 a central controller discovers/adopts nodes, aggregates metrics, and bridges
 everything to Home Assistant.
 
-> Project name is `wattkeeper`. It appears in module paths, binary names,
+> Project name is `strom`. It appears in module paths, binary names,
 > systemd unit names, and the mDNS service type.
 
 ## Repo layout (monorepo)
 
 ```text
-wattkeeper/
+strom/
 ├── ROADMAP.md
 ├── .github/
 │   ├── copilot-instructions.md # repo guidance for Copilot sessions
 │   ├── prompts/                # slash-command prompts for roadmap phases
 │   ├── skills/                 # project-specific Copilot skills
 │   └── workflows/
-├── wk                          # top-level developer CLI entrypoint
+├── strom                          # top-level developer CLI entrypoint
 ├── agent/                      # Go node agent (runs on the Pi)
 │   ├── cmd/agent/
 │   └── internal/
@@ -31,7 +31,7 @@ wattkeeper/
 │   ├── internal/
 │   └── web/
 ├── image/                      # pi-gen based SD card image build
-│   ├── stage-wattkeeper/         # custom pi-gen stage
+│   ├── stage-strom/         # custom pi-gen stage
 │   └── config                  # pi-gen config
 ├── sim/                        # virtual UPS + node simulation (stretch)
 │   ├── dummy-ups/              # NUT dummy-ups driver configs + .dev files
@@ -42,7 +42,7 @@ wattkeeper/
 ## Phase 0 — Repo scaffold
 
 - [x] Init repo, Go workspace (`go.work`) covering `agent/` and `controller/`
-- [x] Top-level CLI workflow: `wk build agent`, `wk image node`, `wk sim up`, `wk check test`
+- [x] Top-level CLI workflow: `strom build agent`, `strom image node`, `strom sim up`, `strom check test`
 - [x] CI stub (GitHub Actions): lint + test on push, cross-compile agent for
       `linux/arm64` (Zero 2 W is 64-bit capable) and `linux/arm` (fallback)
 - [x] `.editorconfig`, `gofmt`/`golangci-lint` config
@@ -64,7 +64,7 @@ NUT netserver with zero manual config, discoverable on the LAN.
 - [x] **Service management**: restart/reload `nut-server` and
       `nut-driver@` units only when generated config actually changed
       (hash compare)
-- [x] **mDNS advertise**: `_wattkeeper._tcp.local` with TXT records:
+- [x] **mDNS advertise**: `_strom._tcp.local` with TXT records:
       `id=<pi-serial>`, `adopted=false`, `ups_count=N`, `version=X`
 - [x] **Agent node HTTP surface**: local dashboard on `/`, minimal public
       `GET /status`, and detailed `GET /healthz` on :80
@@ -73,7 +73,7 @@ NUT netserver with zero manual config, discoverable on the LAN.
 
 **Exit criteria**: fresh Raspberry Pi OS Lite + agent installed → plug in
 BE1050G3 → `upsc <name>@<pi-ip>` works from another machine within ~15s, and
-the node shows up in `avahi-browse _wattkeeper._tcp`.
+the node shows up in `avahi-browse _strom._tcp`.
 
 ## Phase 2 — Flashable image
 
@@ -83,12 +83,12 @@ Goal: one `.img` file. Flash, boot, done.
       udev rules; disables unneeded services; enables SSH with key-only auth
       (key injected at flash time via bootfs, same mechanism as Pi Imager)
 - [x] First-boot script: expand filesystem, generate per-device NUT runtime
-      dirs, hostname = `wkeeper-node-<last4 of serial>`
+      dirs, hostname = `strom-node-<last4 of serial>`
 - [x] WiFi provisioning: support standard `custom.toml` / Pi Imager style
       config on the boot partition so users set WiFi creds at flash time
       without touching the rootfs
-- [x] `wk image node` command that runs pi-gen in Docker and drops
-      `wattkeeper-node-vX.Y.Z.img.xz` in `dist/`
+- [x] `strom image node` command that runs pi-gen in Docker and drops
+      `strom-node-vX.Y.Z.img.xz` in `dist/`
 - [x] CI job to build image on tag
 
 **Exit criteria**: flash image with Pi Imager (WiFi + SSH key set in imager),
@@ -97,10 +97,10 @@ ever opened.
 
 While iterating on Phase 2 work locally, validate with this sequence before pushing:
 
-1. Run `uv run wk image node --version <dev-or-rc-tag>` and confirm it emits `dist/wattkeeper-node-<version>.img.xz` and the matching `.sha256` file.
-2. If a pi-gen run fails mid-build and you are refining the custom stage, use `uv run wk image node --version <same-tag> --continue` to resume from the preserved `pigen_work` container instead of starting from scratch.
+1. Run `uv run strom image node --version <dev-or-rc-tag>` and confirm it emits `dist/strom-node-<version>.img.xz` and the matching `.sha256` file.
+2. If a pi-gen run fails mid-build and you are refining the custom stage, use `uv run strom image node --version <same-tag> --continue` to resume from the preserved `pigen_work` container instead of starting from scratch.
 3. Flash the image with Raspberry Pi Imager using WiFi and SSH-key customization, then boot a real Pi Zero 2 W with a USB UPS attached.
-4. Verify the Phase 2 exit behavior on hardware: first-boot hostname rewrite, `/var/lib/wattkeeper` creation, mDNS advertisement, and remote NUT access via `upsc`.
+4. Verify the Phase 2 exit behavior on hardware: first-boot hostname rewrite, `/var/lib/strom` creation, mDNS advertisement, and remote NUT access via `upsc`.
 
 ## Phase 3 — Controller: discovery + adoption
 
@@ -110,7 +110,7 @@ single pane of glass.
 - [x] Go backend: mDNS browser tracks live nodes; SQLite registry of adopted
       nodes (id, name, location label, adopted_at, last_seen, agent version)
       Completed sub-milestones:
-      - [x] mDNS browser tracks live `_wattkeeper._tcp` nodes
+      - [x] mDNS browser tracks live `_strom._tcp` nodes
       - [x] SQLite-backed node registry exists and persists discovered nodes
       - [x] Controller JSON APIs expose `GET /api/nodes` and `GET /api/nodes/{id}`
       - [x] Controller is packaged as a deployable Docker image
@@ -149,7 +149,7 @@ single pane of glass.
       immediate pinned HTTPS follow-up call. The controller now persists
       encrypted node trust material and can reuse that pinned HTTPS channel for
       later node health reads. Nodes can now be returned to pending state with
-      `wattkeeper-agent reset`, which clears the on-node adoption state and
+      `strom-agent reset`, which clears the on-node adoption state and
       controller API TLS material before restart.
       The controller now uses the pinned HTTPS channel for follow-up health,
       trusted UPS detail reads, and trusted UPS instant-command passthrough.
@@ -180,7 +180,7 @@ single pane of glass.
       The controller now ships a React + TypeScript GUI with a fleet grid,
       per-node detail, per-UPS detail/history charts, trusted instant-command
       passthrough, node metadata editing, and an alerts view while preserving
-      the existing Wattkeeper theme language from the node UI.
+      the existing Strom theme language from the node UI.
 - [x] Alert rules: on-battery, low-battery, node-offline, and comms-lost → webhook
       MQTT delivery is intentionally deferred to Phase 4 alongside the broader
       Home Assistant bridge.
@@ -263,7 +263,7 @@ keeping explicit maintainer control over major/minor version bumps.
 - [x] Create a single source of truth for release train control (for example,
       `.github/release/version.toml`) that stores the active `major` and
       `minor` values plus RC behavior toggles used by workflows.
-- [x] Add a validated `wk release next-version` path that computes the next
+- [x] Add a validated `strom release next-version` path that computes the next
       patch from existing tags for the configured major/minor train
       (`vMAJOR.MINOR.PATCH`) and supports prerelease forms
       (`vMAJOR.MINOR.PATCH-rcN`).
@@ -290,8 +290,8 @@ keeping explicit maintainer control over major/minor version bumps.
       and rollback/hotfix handling.
 
 **Implementation status**: Phase 5.5 software scope is complete in this repo.
-`.github/release/version.toml` is the release-train source of truth, `wk
-release next-version`/`wk release set-train` are pytest-covered, and
+`.github/release/version.toml` is the release-train source of truth, `strom
+release next-version`/`strom release set-train` are pytest-covered, and
 `.github/workflows/auto-release.yml`, `rc.yml`, and `version-bump.yml` wire the
 automation described above on top of the existing `release.yml` publish jobs
 (now also invocable via `workflow_call`). The remaining branch-protection item
@@ -307,16 +307,16 @@ hardware with a real USB UPS attached, before resuming controller-side work.
 This phase is also the holding area for any fixes or follow-up changes
 discovered while doing that validation.
 
-- [ ] Flash a current node image (`dist/wattkeeper-node-<version>.img.xz`)
+- [x] Flash a current node image (`dist/strom-node-<version>.img.xz`)
       with Raspberry Pi Imager using WiFi + SSH-key customization, per the
       Phase 2 validation sequence
-- [ ] Boot a real Pi (Zero 2 W or other supported target) and verify
-      first-boot behavior: hostname rewrite to `wkeeper-node-<last4 serial>`,
-      `/var/lib/wattkeeper` creation, and the OverlayFS first-boot reboot
+- [x] Boot a real Pi (Zero 2 W or other supported target) and verify
+      first-boot behavior: hostname rewrite to `strom-node-<last4 serial>`,
+      `/var/lib/strom` creation, and the OverlayFS first-boot reboot
 - [ ] Plug in a real USB UPS and verify zero-config detection: generated
       `ups.conf`/`upsd.conf`/`upsd.users`, stable UPS naming across reboots,
       and `nut-server`/`nut-driver@` reload behavior
-- [ ] Verify mDNS discoverability (`avahi-browse _wattkeeper._tcp`) and
+- [ ] Verify mDNS discoverability (`avahi-browse _strom._tcp`) and
       remote NUT access (`upsc <name>@<pi-ip>`) from another machine
 - [ ] Verify the node local HTTP surface on real hardware: auth bootstrap
       flow, `GET /status`, `GET /healthz`, and the dashboard UI
@@ -406,7 +406,7 @@ Not required, keep it cheap:
       be required on some hosts)
 - [x] Add scripted scenarios in `sim/scenarios/` for on-battery, restore, and
       node-loss simulation cases
-- [x] Extend the `wk` CLI with `sim up`, `sim down`, and
+- [x] Extend the `strom` CLI with `sim up`, `sim down`, and
       `scenario on_battery` plus replica override support
 - [x] Add CI smoke coverage that boots the sandbox, asserts two pending nodes,
       adopts them, runs a scenario, and verifies metrics/MQTT flow

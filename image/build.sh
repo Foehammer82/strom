@@ -5,8 +5,8 @@ VERSION=${1:-dev}
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 DIST_DIR="$REPO_ROOT/dist"
-AGENT_SOURCE="$DIST_DIR/wattkeeper-agent-linux-arm64"
-IMAGE_OUTPUT="$DIST_DIR/wattkeeper-node-$VERSION.img.xz"
+AGENT_SOURCE="$DIST_DIR/strom-agent-linux-arm64"
+IMAGE_OUTPUT="$DIST_DIR/strom-node-$VERSION.img.xz"
 CHECKSUM_OUTPUT="$IMAGE_OUTPUT.sha256"
 PI_GEN_REF=${PI_GEN_REF:-bookworm-arm64}
 TMP_PARENT=${TMPDIR:-/tmp}
@@ -104,11 +104,11 @@ copy_deploy_volume_from_container() {
 		return 1
 	fi
 
-	find "$destination_dir" -maxdepth 1 -type f -name '*wattkeeper-node*.img.xz' | grep -q .
+	find "$destination_dir" -maxdepth 1 -type f -name '*strom-node*.img.xz' | grep -q .
 }
 
 extract_qemu_from_docker() {
-	container_name="wattkeeper-qemu-$$"
+	container_name="strom-qemu-$$"
 	echo "qemu-aarch64 not found on host; extracting a helper binary from Docker image ${QEMU_HELPER_IMAGE}..."
 	if ! docker create --name "$container_name" "$QEMU_HELPER_IMAGE" >/dev/null; then
 		echo "failed to create Docker helper container for qemu-aarch64" >&2
@@ -121,7 +121,6 @@ extract_qemu_from_docker() {
 	fi
 	docker rm -f "$container_name" >/dev/null 2>&1 || true
 	chmod 0755 "$BIN_DIR/qemu-aarch64"
-	ln -sf "$BIN_DIR/qemu-aarch64" "$BIN_DIR/qemu-aarch64-static"
 }
 
 require_docker
@@ -134,11 +133,11 @@ ensure_binfmt
 cleanup_stale_pigen_container
 
 if [ ! -f "$AGENT_SOURCE" ]; then
-	echo "expected agent binary at $AGENT_SOURCE; run uv run wk build agent first" >&2
+	echo "expected agent binary at $AGENT_SOURCE; run uv run strom build agent first" >&2
 	exit 1
 fi
 
-WORK_ROOT=$(mktemp -d "$TMP_PARENT/wattkeeper-pi-gen.XXXXXX")
+WORK_ROOT=$(mktemp -d "$TMP_PARENT/strom-pi-gen.XXXXXX")
 cleanup() {
 	if [ "${PRESERVE_PIGEN_WORK:-0}" = "1" ]; then
 		echo "preserving pi-gen work directory at $WORK_ROOT" >&2
@@ -150,7 +149,7 @@ trap cleanup EXIT INT TERM
 
 PI_GEN_DIR="$WORK_ROOT/pi-gen"
 WORKSPACE_DIR="$WORK_ROOT/workspace"
-STAGE_DIR="$PI_GEN_DIR/stage-wattkeeper"
+STAGE_DIR="$PI_GEN_DIR/stage-strom"
 BIN_DIR="$WORK_ROOT/bin"
 
 echo "Cloning pi-gen ($PI_GEN_REF) into temporary build workspace..."
@@ -159,7 +158,7 @@ git clone --depth 1 --branch "$PI_GEN_REF" https://github.com/RPi-Distro/pi-gen.
 mkdir -p "$WORKSPACE_DIR"
 mkdir -p "$BIN_DIR"
 cp "$SCRIPT_DIR/config" "$WORKSPACE_DIR/config"
-cp -R "$SCRIPT_DIR/stage-wattkeeper" "$STAGE_DIR"
+cp -R "$SCRIPT_DIR/stage-strom" "$STAGE_DIR"
 
 if [ "$QEMU_HINT" = 'static' ]; then
 	ln -sf "$QEMU_BIN" "$BIN_DIR/qemu-aarch64"
@@ -172,9 +171,9 @@ else
 	QEMU_PATH_PREFIX=$PATH
 fi
 
-install -D -m 0755 "$AGENT_SOURCE" "$STAGE_DIR/01-agent/files/usr/local/bin/wattkeeper-agent"
-install -D -m 0644 "$REPO_ROOT/deploy/wattkeeper-agent.service" "$STAGE_DIR/01-agent/files/etc/systemd/system/wattkeeper-agent.service"
-install -D -m 0644 "$REPO_ROOT/deploy/99-wattkeeper-agent.rules" "$STAGE_DIR/01-agent/files/etc/udev/rules.d/99-wattkeeper-agent.rules"
+install -D -m 0755 "$AGENT_SOURCE" "$STAGE_DIR/01-agent/files/usr/local/bin/strom-agent"
+install -D -m 0644 "$REPO_ROOT/deploy/strom-agent.service" "$STAGE_DIR/01-agent/files/etc/systemd/system/strom-agent.service"
+install -D -m 0644 "$REPO_ROOT/deploy/99-strom-agent.rules" "$STAGE_DIR/01-agent/files/etc/udev/rules.d/99-strom-agent.rules"
 
 touch "$PI_GEN_DIR/stage2/SKIP_IMAGES"
 
@@ -185,7 +184,7 @@ echo "Running pi-gen Docker build..."
 build_succeeded=1
 if ! (
 	cd "$PI_GEN_DIR"
-	PATH="$QEMU_PATH_PREFIX" CONTAINER_NAME="$PI_GEN_CONTAINER_NAME" PRESERVE_CONTAINER=1 WATTKEEPER_STAGE_DIR='stage-wattkeeper' ./build-docker.sh -c "$WORKSPACE_DIR/config"
+	PATH="$QEMU_PATH_PREFIX" CONTAINER_NAME="$PI_GEN_CONTAINER_NAME" PRESERVE_CONTAINER=1 STROM_STAGE_DIR='stage-strom' ./build-docker.sh -c "$WORKSPACE_DIR/config"
 ); then
 	build_succeeded=0
 fi
@@ -198,7 +197,7 @@ if [ "$build_succeeded" -ne 1 ]; then
 	fi
 fi
 
-FOUND_IMAGE=$(find "$PI_GEN_DIR/deploy" -maxdepth 1 -type f -name '*wattkeeper-node*.img.xz' | head -n 1)
+FOUND_IMAGE=$(find "$PI_GEN_DIR/deploy" -maxdepth 1 -type f -name '*strom-node*.img.xz' | head -n 1)
 if [ -z "$FOUND_IMAGE" ]; then
 	echo "pi-gen completed without producing an image artifact" >&2
 	exit 1

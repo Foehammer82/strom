@@ -20,8 +20,8 @@ func TestStoreUpsertAndListNodes(t *testing.T) {
 	now := time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
 	if err := store.UpsertDiscoveredNode(context.Background(), Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  "192.168.1.50",
 		Port:     80,
 		Version:  "v0.3.0",

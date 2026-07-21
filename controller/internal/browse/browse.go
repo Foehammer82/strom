@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	defaultService = "_wattkeeper._tcp"
+	defaultService = "_strom._tcp"
 	defaultDomain  = "local."
 )
 

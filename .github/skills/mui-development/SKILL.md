@@ -1,6 +1,6 @@
 ---
 name: mui-development
-description: 'Reference conventions for building or migrating the Wattkeeper controller web app (controller/web) to Material UI (MUI). Use when generating, editing, or reviewing React + MUI component code, theming, or planning the MUI adoption/migration.'
+description: 'Reference conventions for building or migrating the Strom controller web app (controller/web) to Material UI (MUI). Use when generating, editing, or reviewing React + MUI component code, theming, or planning the MUI adoption/migration.'
 user-invocable: true
 ---
 

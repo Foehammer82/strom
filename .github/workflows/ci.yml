@@ -41,13 +41,13 @@ jobs:
         run: golangci-lint version
 
       - name: Lint
-        run: uv run wk check lint
+        run: uv run strom check lint
 
       - name: Test
-        run: uv run wk check test
+        run: uv run strom check test
 
       - name: Test repo tooling
-        run: uv run wk check tools
+        run: uv run strom check tools
 
   controller-web:
     runs-on: ubuntu-latest
@@ -76,7 +76,7 @@ jobs:
         run: uv python install
 
       - name: Build controller web scaffold
-        run: uv run wk build controller-web
+        run: uv run strom build controller-web
 
   docs:
     runs-on: ubuntu-latest
@@ -95,7 +95,7 @@ jobs:
         run: uv python install
 
       - name: Build docs
-        run: uv run wk docs build
+        run: uv run strom docs build
 
   build-agent:
     runs-on: ubuntu-latest
@@ -119,12 +119,12 @@ jobs:
         run: uv python install
 
       - name: Build agent binaries
-        run: uv run wk build agent --version ${{ github.sha }}
+        run: uv run strom build agent --version ${{ github.sha }}
 
       - name: Upload agent artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wattkeeper-agent-${{ github.sha }}
+          name: strom-agent-${{ github.sha }}
           path: dist/
           retention-days: 7
 
@@ -145,11 +145,11 @@ jobs:
         run: uv python install
 
       - name: Bring up simulation rig
-        run: uv run wk sim up --replicas 2 --version ${{ github.sha }}
+        run: uv run strom sim up --replicas 2 --version ${{ github.sha }}
 
       - name: Run simulation smoke assertions
-        run: uv run wk sim scenario ci-smoke --replicas 2 --strict
+        run: uv run strom sim scenario ci-smoke --replicas 2 --strict
 
       - name: Tear down simulation rig
         if: always()
-        run: uv run wk sim down
+        run: uv run strom sim down

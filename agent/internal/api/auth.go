@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	defaultAuthPath   = "/var/lib/wattkeeper/webui-auth.json"
+	defaultAuthPath   = "/var/lib/strom/webui-auth.json"
 	defaultSessionTTL = 12 * time.Hour
-	sessionCookieName = "wattkeeper_session"
+	sessionCookieName = "strom_session"
 
 	// defaultAdminUsername is the fixed local admin account name. This node
 	// only ever has a single local admin identity, so there is no need to
@@ -103,7 +103,7 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign In - Wattkeeper Node</title>
+  <title>Sign In - Strom Node</title>
   <style>
     :root { --bg:#f4efe7; --panel:#fffaf2; --ink:#1f2933; --muted:#5f6c7b; --line:#d7c8b3; --accent:#0f766e; --danger:#b91c1c; }
     * { box-sizing:border-box; }
@@ -139,7 +139,7 @@ var bootstrapTemplate = template.Must(template.New("bootstrap").Parse(`<!DOCTYPE
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Set Admin Password - Wattkeeper Node</title>
+  <title>Set Admin Password - Strom Node</title>
   <style>
     :root { --bg:#f4efe7; --panel:#fffaf2; --ink:#1f2933; --muted:#5f6c7b; --line:#d7c8b3; --accent:#0f766e; --danger:#b91c1c; }
     * { box-sizing:border-box; }

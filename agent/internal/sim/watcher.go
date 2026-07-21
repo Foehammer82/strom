@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/agent/internal/hotplug"
+	"github.com/Foehammer82/strom/agent/internal/hotplug"
 	"github.com/fsnotify/fsnotify"
 )
 

@@ -1,5 +1,5 @@
-github.com/Foehammer82/wattkeeper/agent v0.0.0-20260704053810-6c612f350127 h1:ENVw2/WcOSJY6UWd+P6l9ly03sarB7oWIkwfYKabWAs=
-github.com/Foehammer82/wattkeeper/agent v0.0.0-20260704053810-6c612f350127/go.mod h1:j6rFQwFLm92R6fV81uracI32GKJx1OIAVASSp5CQJNo=
+github.com/Foehammer82/strom/agent v0.0.0-20260704053810-6c612f350127 h1:ENVw2/WcOSJY6UWd+P6l9ly03sarB7oWIkwfYKabWAs=
+github.com/Foehammer82/strom/agent v0.0.0-20260704053810-6c612f350127/go.mod h1:j6rFQwFLm92R6fV81uracI32GKJx1OIAVASSp5CQJNo=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

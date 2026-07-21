@@ -28,15 +28,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
+	"github.com/Foehammer82/strom/agent/internal/nutconf"
 )
 
 const (
 	defaultCPUTempPath = "/sys/class/thermal/thermal_zone0/temp"
 	defaultRootPath    = "/"
 	defaultUPSCPath    = "upsc"
-	defaultAgentBinary = "/usr/local/bin/wattkeeper-agent"
-	csrfCookieName     = "wattkeeper_csrf"
+	defaultAgentBinary = "/usr/local/bin/strom-agent"
+	csrfCookieName     = "strom_csrf"
 	startingStatus     = "starting"
 	unknownStatus      = "unknown"
 )
@@ -264,7 +264,7 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Wattkeeper Node</title>
+	<title>Strom Node</title>
 	<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 	<link rel="stylesheet" href="/assets/styles.css">
 </head>
@@ -272,9 +272,9 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 	<main class="shell">
 		<header class="topbar surface">
 			<div class="brand">
-				<img class="brand-mark" src="/assets/logo.svg" alt="Wattkeeper logo">
+				<img class="brand-mark" src="/assets/logo.svg" alt="Strom logo">
 				<div class="brand-copy">
-					<h1>Wattkeeper Node</h1>
+					<h1>Strom Node</h1>
 				</div>
 			</div>
 			<nav id="topbar-toolbar" class="toolbar" aria-label="Dashboard actions">
@@ -336,7 +336,7 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 						</div>
 						<div class="menu-divider" role="separator"></div>
 						<div class="menu-section">
-							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/wattkeeper/getting-started/" target="_blank" rel="noreferrer" role="menuitem">
+							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem">
 								<span class="menu-link-icon-wrap" aria-hidden="true">
 									<svg class="menu-link-icon" viewBox="0 0 24 24" focusable="false">
 										<path d="M20 3.5H8a3 3 0 0 0-3 3V18a2.5 2.5 0 0 1 2.5-2.5H20V3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
@@ -1114,7 +1114,7 @@ func (s *Service) replaceAgentBinary(content []byte) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(resolvedTarget), 0o755); err != nil {
 		return "", fmt.Errorf("prepare agent binary directory: %w", err)
 	}
-	tempFile, err := os.CreateTemp(filepath.Dir(resolvedTarget), ".wattkeeper-agent-ota-*")
+	tempFile, err := os.CreateTemp(filepath.Dir(resolvedTarget), ".strom-agent-ota-*")
 	if err != nil {
 		return "", fmt.Errorf("create temporary OTA file: %w", err)
 	}

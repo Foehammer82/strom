@@ -1,6 +1,6 @@
 # Features
 
-This page separates what Wattkeeper ships today from what is still planned.
+This page separates what Strom ships today from what is still planned.
 
 ## Available Today
 
@@ -10,7 +10,7 @@ This page separates what Wattkeeper ships today from what is still planned.
 - runs `nut-scanner` and parses discovered UPS metadata
 - generates deterministic NUT configuration
 - restarts or reloads NUT services only when generated config changes
-- advertises the node over mDNS as `_wattkeeper._tcp`
+- advertises the node over mDNS as `_strom._tcp`
 - exposes a local node dashboard on port `80`
 - serves a minimal public JSON node status at `/status`
 - serves detailed node JSON at `/status/details`
@@ -21,7 +21,7 @@ This page separates what Wattkeeper ships today from what is still planned.
 ### Flashable Node Image
 
 - builds a Raspberry Pi OS Lite image for `arm64`
-- includes the Wattkeeper agent, service units, and udev rules
+- includes the Strom agent, service units, and udev rules
 - supports Raspberry Pi Imager WiFi and SSH customization
 - runs a first-boot service to set the node hostname and create runtime state
 - supports boot-partition factory reset markers for offline node recovery

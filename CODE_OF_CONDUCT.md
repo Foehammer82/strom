@@ -7,7 +7,7 @@ or a jerk. If someone says you crossed a line, take it seriously.
 
 ## Our Pledge
 
-Wattkeeper should feel welcoming, practical, and safe to build together.
+Strom should feel welcoming, practical, and safe to build together.
 
 We want this community to be harassment-free and encouraging for everyone,
 regardless of age, body size, visible or invisible disability, ethnicity, sex

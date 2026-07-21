@@ -5,10 +5,10 @@ if [ ! -f "$BOOT_CONFIG" ]; then
 	BOOT_CONFIG="${BOOTFS_DIR}/config.txt"
 fi
 
-if ! grep -q '^# wattkeeper power tuning$' "$BOOT_CONFIG"; then
+if ! grep -q '^# strom power tuning$' "$BOOT_CONFIG"; then
 	cat >> "$BOOT_CONFIG" <<'EOF'
 
-# wattkeeper power tuning
+# strom power tuning
 dtoverlay=disable-bt
 hdmi_ignore_hotplug=1
 EOF

@@ -31,35 +31,35 @@ The agent exposes a node dashboard at `/` plus JSON endpoints at `GET /status` a
 
 On an uninitialized node with auth enabled, visiting `/` redirects to `/auth/bootstrap`, which prompts for a password for the single local `admin` account (there is no built-in default password). After bootstrap, `/`, `/status/details`, `/healthz`, and `/settings` require a session cookie created by `POST /auth/login` (bootstrap itself also starts a session). For development only, auth can be bypassed with `--http-auth=false`.
 
-To manually reset local web auth on a node, remove `/var/lib/wattkeeper/webui-auth.json` and revisit `/`; the node returns to the bootstrap flow.
+To manually reset local web auth on a node, remove `/var/lib/strom/webui-auth.json` and revisit `/`; the node returns to the bootstrap flow.
 
 When the controller marks local UI policy as managed for an adopted node, the local settings toggle is locked. Releasing policy from the controller returns control to the node-local admin in `/settings`.
 
-To return an adopted node to pending discovery state, run `sudo wattkeeper-agent reset` and restart the agent service. That clears `/var/lib/wattkeeper/adoption.json` and the node controller API TLS certificate/key so the node advertises `adopted=false` again on the next start.
+To return an adopted node to pending discovery state, run `sudo strom-agent reset` and restart the agent service. That clears `/var/lib/strom/adoption.json` and the node controller API TLS certificate/key so the node advertises `adopted=false` again on the next start.
 
 For offline recovery scenarios, you can also request a factory reset from the boot partition:
 
 1. Power down the node and mount the boot partition.
-2. Create an empty marker file named `wattkeeper-factory-reset` at `/boot/firmware/` (or `/boot/` on older layouts).
+2. Create an empty marker file named `strom-factory-reset` at `/boot/firmware/` (or `/boot/` on older layouts).
 3. Boot the node.
 
 At startup, the agent consumes that marker and clears:
 
-- `/var/lib/wattkeeper/adoption.json`
-- `/var/lib/wattkeeper/node-api.crt`
-- `/var/lib/wattkeeper/node-api.key`
-- `/var/lib/wattkeeper/names.json`
-- `/var/lib/wattkeeper/webui-auth.json`
+- `/var/lib/strom/adoption.json`
+- `/var/lib/strom/node-api.crt`
+- `/var/lib/strom/node-api.key`
+- `/var/lib/strom/names.json`
+- `/var/lib/strom/webui-auth.json`
 
 The node then returns to pending adoption and local web bootstrap state.
 
-When OTA updates are applied successfully, the node reports `restart_required=true` so operations can restart `wattkeeper-agent` to run the new binary.
+When OTA updates are applied successfully, the node reports `restart_required=true` so operations can restart `strom-agent` to run the new binary.
 
 For local UI and API development away from Pi hardware, run `go run ./agent/cmd/agent --dev-ui --listen :8080` from WSL or another Linux environment. That mode serves sample data and skips hotplug, scanner, and system service integration.
 
 ## Discovery Advertisement
 
-The node advertises `_wattkeeper._tcp.local` and includes TXT metadata such as:
+The node advertises `_strom._tcp.local` and includes TXT metadata such as:
 
 - node identifier
 - adoption state

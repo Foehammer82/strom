@@ -24,7 +24,7 @@ The current implementation already provides:
 - MQTT publishing and command subscription for Home Assistant integration workflows.
 - Optional aggregate NUT listener mode on the controller.
 
-These choices align with Wattkeeper's low-ops, edge-first deployment model.
+These choices align with Strom's low-ops, edge-first deployment model.
 
 ## Recommended Defaults For The Next 6-12 Months
 
@@ -160,7 +160,7 @@ Mitigations:
 1. Adding Postgres only because fleet size might grow, without measured contention or SLO failure.
 2. Adding Redis without a concrete shared-state or coordination requirement.
 3. Replacing mDNS with broker-first discovery before secure bootstrap and enrollment constraints are fully solved.
-4. Introducing additional infrastructure that outpaces the operational maturity of typical Wattkeeper deployments.
+4. Introducing additional infrastructure that outpaces the operational maturity of typical Strom deployments.
 
 ## Immediate Next Actions (No Stack Swap Required)
 

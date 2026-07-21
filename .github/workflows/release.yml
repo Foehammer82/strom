@@ -58,12 +58,12 @@ jobs:
           platforms: arm64
 
       - name: Test
-        run: uv run wk check test
+        run: uv run strom check test
 
       - name: Build release artifacts
         run: |
-          uv run wk release agent --version ${{ inputs.version || github.ref_name }}
-          uv run wk image node --version ${{ inputs.version || github.ref_name }}
+          uv run strom release agent --version ${{ inputs.version || github.ref_name }}
+          uv run strom image node --version ${{ inputs.version || github.ref_name }}
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -80,15 +80,15 @@ jobs:
 
             | Artifact | Description |
             | --- | --- |
-            | `wattkeeper-node-${{ inputs.version || github.ref_name }}.img.xz` | Flashable Raspberry Pi OS Lite image with the agent pre-installed. Verify against the matching `.sha256` file before flashing. |
-            | `wattkeeper-agent-${{ inputs.version || github.ref_name }}-linux-arm64.tar.gz` | Standalone agent binary + systemd/udev install assets (arm64, e.g. Pi Zero 2 W, Pi 4/5). |
-            | `wattkeeper-agent-${{ inputs.version || github.ref_name }}-linux-armv6.tar.gz` | Standalone agent binary + systemd/udev install assets (armv6 fallback). |
+            | `strom-node-${{ inputs.version || github.ref_name }}.img.xz` | Flashable Raspberry Pi OS Lite image with the agent pre-installed. Verify against the matching `.sha256` file before flashing. |
+            | `strom-agent-${{ inputs.version || github.ref_name }}-linux-arm64.tar.gz` | Standalone agent binary + systemd/udev install assets (arm64, e.g. Pi Zero 2 W, Pi 4/5). |
+            | `strom-agent-${{ inputs.version || github.ref_name }}-linux-armv6.tar.gz` | Standalone agent binary + systemd/udev install assets (armv6 fallback). |
             | `SHA256SUMS` | Checksums for the two agent archives above. |
 
             ## Container images
 
-            - `ghcr.io/${{ github.repository_owner }}/wattkeeper-controller:${{ inputs.version || github.ref_name }}`
-            - `ghcr.io/${{ github.repository_owner }}/wattkeeper-agent:${{ inputs.version || github.ref_name }}`
+            - `ghcr.io/${{ github.repository_owner }}/strom-controller:${{ inputs.version || github.ref_name }}`
+            - `ghcr.io/${{ github.repository_owner }}/strom-agent:${{ inputs.version || github.ref_name }}`
           files: |
             dist/release/*.tar.gz
             dist/release/SHA256SUMS
@@ -131,7 +131,7 @@ jobs:
         run: uv python install
 
       - name: Build controller web scaffold
-        run: uv run wk build controller-web
+        run: uv run strom build controller-web
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -144,7 +144,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/wattkeeper-controller
+          images: ghcr.io/${{ github.repository_owner }}/strom-controller
           tags: |
             type=raw,value=${{ inputs.version || github.ref_name }}
             type=raw,value=latest,enable=${{ !contains(inputs.version || github.ref_name, '-') }}
@@ -188,7 +188,7 @@ jobs:
         id: meta-agent
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/wattkeeper-agent
+          images: ghcr.io/${{ github.repository_owner }}/strom-agent
           tags: |
             type=raw,value=${{ inputs.version || github.ref_name }}
             type=raw,value=latest,enable=${{ !contains(inputs.version || github.ref_name, '-') }}

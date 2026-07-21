@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	DefaultNamesPath = "/var/lib/wattkeeper/names.json"
+	DefaultNamesPath = "/var/lib/strom/names.json"
 	maxUPSNameLength = 20
 )
 

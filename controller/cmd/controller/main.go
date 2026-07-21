@@ -29,14 +29,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/controller/internal/aggregatenut"
-	"github.com/Foehammer82/wattkeeper/controller/internal/alerts"
-	"github.com/Foehammer82/wattkeeper/controller/internal/browse"
-	"github.com/Foehammer82/wattkeeper/controller/internal/ca"
-	controllermqtt "github.com/Foehammer82/wattkeeper/controller/internal/mqtt"
-	"github.com/Foehammer82/wattkeeper/controller/internal/nutpoll"
-	"github.com/Foehammer82/wattkeeper/controller/internal/registry"
-	"github.com/Foehammer82/wattkeeper/controller/internal/securestore"
+	"github.com/Foehammer82/strom/controller/internal/aggregatenut"
+	"github.com/Foehammer82/strom/controller/internal/alerts"
+	"github.com/Foehammer82/strom/controller/internal/browse"
+	"github.com/Foehammer82/strom/controller/internal/ca"
+	controllermqtt "github.com/Foehammer82/strom/controller/internal/mqtt"
+	"github.com/Foehammer82/strom/controller/internal/nutpoll"
+	"github.com/Foehammer82/strom/controller/internal/registry"
+	"github.com/Foehammer82/strom/controller/internal/securestore"
 )
 
 var version = "dev"
@@ -306,7 +306,7 @@ var webAssets embed.FS
 var controllerAssetFS = mustSubFS(webAssets, "assets")
 
 func main() {
-	logger := log.New(os.Stdout, "wattkeeper-controller: ", log.LstdFlags)
+	logger := log.New(os.Stdout, "strom-controller: ", log.LstdFlags)
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "backup":
@@ -389,7 +389,7 @@ func main() {
 		Password:        cfg.mqttPassword,
 		DiscoveryPrefix: cfg.mqttDiscoveryPrefix,
 		StatePrefix:     cfg.mqttStatePrefix,
-		ClientID:        "wattkeeper-controller",
+		ClientID:        "strom-controller",
 		CommandHandler: func(commandCtx context.Context, request controllermqtt.CommandRequest) error {
 			_, runErr := application.runTrustedUPSCommand(commandCtx, request.NodeID, request.UPSName, request.Command)
 			return runErr
@@ -460,7 +460,7 @@ func parseFlags() config {
 	flag.StringVar(&cfg.mqttUsername, "mqtt-username", "", "MQTT username for the Home Assistant bridge")
 	flag.StringVar(&cfg.mqttPassword, "mqtt-password", "", "MQTT password for the Home Assistant bridge")
 	flag.StringVar(&cfg.mqttDiscoveryPrefix, "mqtt-discovery-prefix", "homeassistant", "Home Assistant MQTT discovery prefix")
-	flag.StringVar(&cfg.mqttStatePrefix, "mqtt-state-prefix", "wattkeeper", "MQTT state topic prefix")
+	flag.StringVar(&cfg.mqttStatePrefix, "mqtt-state-prefix", "strom", "MQTT state topic prefix")
 	flag.StringVar(&cfg.discoverySeeds, "discovery-seeds", "", "optional comma-separated host:port targets for discovery fallback when mDNS is unavailable")
 	flag.StringVar(&cfg.aggregateNUTListen, "aggregate-nut-listen", ":3493", "controller aggregate NUT listen address")
 	flag.BoolVar(&cfg.aggregateNUTEnabled, "aggregate-nut-enabled", true, "enable controller aggregate NUT listener")
@@ -490,7 +490,7 @@ type otaConfig struct {
 
 func parseBackupFlags(args []string) (backupConfig, error) {
 	var cfg backupConfig
-	flags := flag.NewFlagSet("wattkeeper-controller backup", flag.ContinueOnError)
+	flags := flag.NewFlagSet("strom-controller backup", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&cfg.dataDir, "data-dir", defaultControllerDataDir, "directory containing controller.db")
 	flags.StringVar(&cfg.output, "output", "", "destination path for backup copy of controller.db")
@@ -502,7 +502,7 @@ func parseBackupFlags(args []string) (backupConfig, error) {
 
 func parseRestoreFlags(args []string) (restoreConfig, error) {
 	var cfg restoreConfig
-	flags := flag.NewFlagSet("wattkeeper-controller restore", flag.ContinueOnError)
+	flags := flag.NewFlagSet("strom-controller restore", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&cfg.dataDir, "data-dir", defaultControllerDataDir, "directory containing controller.db")
 	flags.StringVar(&cfg.input, "input", "", "source backup file to restore into controller.db")
@@ -515,11 +515,11 @@ func parseRestoreFlags(args []string) (restoreConfig, error) {
 
 func parseOTAFlags(args []string) (otaConfig, error) {
 	var cfg otaConfig
-	flags := flag.NewFlagSet("wattkeeper-controller ota", flag.ContinueOnError)
+	flags := flag.NewFlagSet("strom-controller ota", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&cfg.dataDir, "data-dir", defaultControllerDataDir, "directory containing controller.db and controller CA")
 	flags.StringVar(&cfg.nodeID, "node-id", "", "adopted node ID to receive the update")
-	flags.StringVar(&cfg.binaryPath, "binary", "", "path to the signed wattkeeper-agent binary payload")
+	flags.StringVar(&cfg.binaryPath, "binary", "", "path to the signed strom-agent binary payload")
 	flags.StringVar(&cfg.version, "version", "", "version string advertised in OTA metadata")
 	if err := flags.Parse(args); err != nil {
 		return otaConfig{}, err

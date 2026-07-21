@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible problem in Wattkeeper
+about: Report a reproducible problem in Strom
 title: "[Bug]: "
 labels: bug
 assignees: ""
@@ -18,7 +18,7 @@ assignees: ""
 
 ## Environment
 
-- Wattkeeper version:
+- Strom version:
 - OS / device:
 - Raspberry Pi model:
 - UPS model:

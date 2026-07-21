@@ -46,7 +46,7 @@ func Ensure(dataDir string) (*Authority, error) {
 	}
 	template := &x509.Certificate{
 		SerialNumber:          serialNumber,
-		Subject:               pkix.Name{CommonName: "Wattkeeper Controller CA"},
+		Subject:               pkix.Name{CommonName: "Strom Controller CA"},
 		NotBefore:             time.Now().Add(-1 * time.Hour).UTC(),
 		NotAfter:              time.Now().AddDate(10, 0, 0).UTC(),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,

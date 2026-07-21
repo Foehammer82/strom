@@ -1,6 +1,6 @@
 ---
 name: nut-agent-validation
-description: 'Use for recurring Wattkeeper agent validation work: scanner fixtures, config rendering, name stability, service reload behavior, focused Go tests, and NUT config checks during Phase 1 development.'
+description: 'Use for recurring Strom agent validation work: scanner fixtures, config rendering, name stability, service reload behavior, focused Go tests, and NUT config checks during Phase 1 development.'
 argument-hint: 'Target package, file, or validation focus'
 user-invocable: true
 ---

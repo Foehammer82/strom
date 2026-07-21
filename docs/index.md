@@ -1,6 +1,6 @@
-# Wattkeeper Docs
+# Strom Docs
 
-Wattkeeper is a distributed UPS monitoring system built around small Raspberry Pi nodes that auto-detect USB UPS devices, configure NUT locally, and advertise themselves for discovery.
+Strom is a distributed UPS monitoring system built around small Raspberry Pi nodes that auto-detect USB UPS devices, configure NUT locally, and advertise themselves for discovery.
 
 This documentation set is the user-facing entry point for the project. It is written in Markdown and organized so operators and evaluators can find the current path quickly.
 

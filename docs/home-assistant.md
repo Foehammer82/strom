@@ -1,6 +1,6 @@
 # Home Assistant Setup
 
-This guide explains how to connect Wattkeeper controller telemetry and controls to Home Assistant over MQTT.
+This guide explains how to connect Strom controller telemetry and controls to Home Assistant over MQTT.
 
 ## What You Get Automatically
 
@@ -15,7 +15,7 @@ Entities are grouped under stable per-node devices so multiple UPSes on one node
 ## Prerequisites
 
 - a running MQTT broker reachable by the controller
-- a running Wattkeeper controller with adopted nodes
+- a running Strom controller with adopted nodes
 - Home Assistant with MQTT integration enabled
 
 ## Configure The Controller MQTT Bridge
@@ -23,19 +23,19 @@ Entities are grouped under stable per-node devices so multiple UPSes on one node
 Start the controller with MQTT options:
 
 ```sh
-wattkeeper-controller \
+strom-controller \
   --mqtt-broker mqtt://mqtt.local:1883 \
   --mqtt-username homeassistant \
   --mqtt-password '<broker-password>' \
   --mqtt-discovery-prefix homeassistant \
-  --mqtt-state-prefix wattkeeper
+  --mqtt-state-prefix strom
 ```
 
 Notes:
 
 - `--mqtt-broker` is required to enable publishing.
 - `--mqtt-discovery-prefix` defaults to `homeassistant`.
-- `--mqtt-state-prefix` defaults to `wattkeeper`.
+- `--mqtt-state-prefix` defaults to `strom`.
 - Published discovery and state messages are retained.
 - The controller publishes availability using MQTT Last Will and Testament (LWT).
 
@@ -54,17 +54,17 @@ controller.
 
 1. In Home Assistant, open Settings -> Devices and Services.
 2. Add MQTT integration if it is not already configured.
-3. Confirm Home Assistant can connect to the same broker used by Wattkeeper.
-4. Wait for discovery. New Wattkeeper devices and entities should appear automatically.
+3. Confirm Home Assistant can connect to the same broker used by Strom.
+4. Wait for discovery. New Strom devices and entities should appear automatically.
 
 ## Topic Model (Reference)
 
 State and availability topics are published under the configured state prefix:
 
-- `wattkeeper/controller/availability`
-- `wattkeeper/nodes/<node-id>/availability`
-- `wattkeeper/nodes/<node-id>/ups/<ups-name>/state`
-- `wattkeeper/nodes/<node-id>/ups/<ups-name>/command`
+- `strom/controller/availability`
+- `strom/nodes/<node-id>/availability`
+- `strom/nodes/<node-id>/ups/<ups-name>/state`
+- `strom/nodes/<node-id>/ups/<ups-name>/command`
 
 Discovery topics are published under the configured discovery prefix, for example:
 

@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/agent/internal/api"
-	"github.com/Foehammer82/wattkeeper/agent/internal/hotplug"
-	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
-	"github.com/Foehammer82/wattkeeper/agent/internal/services"
-	"github.com/Foehammer82/wattkeeper/agent/nodeapi"
+	"github.com/Foehammer82/strom/agent/internal/api"
+	"github.com/Foehammer82/strom/agent/internal/hotplug"
+	"github.com/Foehammer82/strom/agent/internal/nutconf"
+	"github.com/Foehammer82/strom/agent/internal/services"
+	"github.com/Foehammer82/strom/agent/nodeapi"
 )
 
 func TestRuntimeLoopWritesConfigsAndSkipsReloadWhenUnchanged(t *testing.T) {
@@ -279,7 +279,7 @@ func TestApplyFactoryResetIfRequestedClearsStateAndMarker(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	markerPath := filepath.Join(tempDir, "wattkeeper-factory-reset")
+	markerPath := filepath.Join(tempDir, "strom-factory-reset")
 	adoptionPath := filepath.Join(tempDir, "adoption.json")
 	tlsCertPath := filepath.Join(tempDir, "node-api.crt")
 	tlsKeyPath := filepath.Join(tempDir, "node-api.key")

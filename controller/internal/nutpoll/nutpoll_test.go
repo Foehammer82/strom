@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/controller/internal/registry"
-	"github.com/Foehammer82/wattkeeper/controller/internal/securestore"
+	"github.com/Foehammer82/strom/controller/internal/registry"
+	"github.com/Foehammer82/strom/controller/internal/securestore"
 )
 
 func TestClientPollReadsUPSesAndVariables(t *testing.T) {
@@ -60,8 +60,8 @@ func TestPollerPollOnceStoresSamplesAndPrunesRetention(t *testing.T) {
 	}
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  "192.168.1.50",
 		Port:     80,
 		Version:  "v0.3.0",
@@ -144,8 +144,8 @@ func TestPollerPollOnceMarksNodeOfflineAfterRepeatedFailures(t *testing.T) {
 	}
 	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{
 		ID:       "serial-1234",
-		Instance: "wkeeper-node-1234",
-		Hostname: "wkeeper-node-1234.local",
+		Instance: "strom-node-1234",
+		Hostname: "strom-node-1234.local",
 		Address:  "192.168.1.50",
 		Port:     80,
 		Version:  "v0.3.0",

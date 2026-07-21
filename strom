@@ -7,4 +7,4 @@ from tools.__main__ import main
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(["wk", *sys.argv[1:]]))
+    raise SystemExit(main(["strom", *sys.argv[1:]]))

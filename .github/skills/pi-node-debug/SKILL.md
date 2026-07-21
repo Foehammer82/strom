@@ -1,13 +1,13 @@
 ---
 name: pi-node-debug
-description: 'Use for Raspberry Pi node bring-up and field debugging: hotplug events, generated NUT config, systemd state, agent health checks, mDNS visibility, and remote troubleshooting on Wattkeeper nodes.'
+description: 'Use for Raspberry Pi node bring-up and field debugging: hotplug events, generated NUT config, systemd state, agent health checks, mDNS visibility, and remote troubleshooting on Strom nodes.'
 argument-hint: 'Symptom, Pi host, or subsystem to debug'
 user-invocable: true
 ---
 
 # Pi Node Debug
 
-Use this skill when debugging Wattkeeper on Raspberry Pi hardware or when reasoning about the deploy/image path before writing code for it.
+Use this skill when debugging Strom on Raspberry Pi hardware or when reasoning about the deploy/image path before writing code for it.
 
 ## When to Use
 
@@ -22,19 +22,19 @@ Use this skill when debugging Wattkeeper on Raspberry Pi hardware or when reason
 2. Confirm the local agent state first:
    - inspect agent logs
    - inspect generated files under `/etc/nut/`
-   - inspect the stable name map under `/var/lib/wattkeeper/`
+   - inspect the stable name map under `/var/lib/strom/`
 3. Check systemd state in this order:
-   - `systemctl status wattkeeper-agent`
+   - `systemctl status strom-agent`
    - `systemctl status nut-server`
    - `systemctl status 'nut-driver@*'`
-   - `journalctl -u wattkeeper-agent -u nut-server --no-pager -n 100`
+   - `journalctl -u strom-agent -u nut-server --no-pager -n 100`
 4. Check USB and NUT detection:
    - `nut-scanner -U -q`
    - `upsc <ups-name>@localhost`
    - confirm serial, vendor, and fallback identity fields are present enough for naming
 5. If the bug concerns discovery or API behavior once those features exist, then check:
    - `curl http://<node>:8080/healthz`
-   - `avahi-browse _wattkeeper._tcp -r`
+   - `avahi-browse _strom._tcp -r`
 6. Compare the observed behavior with the roadmap exit criteria before deciding whether this is a defect, missing implementation, or out-of-scope expectation.
 
 ## Notes

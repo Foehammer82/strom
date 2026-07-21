@@ -1,6 +1,6 @@
 # Reference
 
-This section collects the current operational reference material for Wattkeeper.
+This section collects the current operational reference material for Strom.
 
 ## Pages
 

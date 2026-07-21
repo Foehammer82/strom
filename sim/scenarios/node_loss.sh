@@ -3,7 +3,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/common.sh"
 
-container_id="$(compose ps -q wattkeeper-agent | head -n 1)"
+container_id="$(compose ps -q strom-agent | head -n 1)"
 if [[ -z "$container_id" ]]; then
     echo "no running agent container found"
     exit 1

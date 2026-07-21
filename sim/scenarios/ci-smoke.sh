@@ -115,8 +115,8 @@ if [[ "$metrics_ready_count" -lt 1 ]]; then
     exit 1
 fi
 
-if ! docker compose -f "$COMPOSE_FILE" logs --no-color --since=2m wattkeeper-controller \
-    | grep -q "mqtt publish topic=wattkeeper/nodes/.*/ups/.*/state"; then
+if ! docker compose -f "$COMPOSE_FILE" logs --no-color --since=2m strom-controller \
+    | grep -q "mqtt publish topic=strom/nodes/.*/ups/.*/state"; then
     echo "warning: no MQTT UPS state publish observed in controller logs"
 fi
 

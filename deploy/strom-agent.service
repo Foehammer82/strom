@@ -1,11 +1,11 @@
 [Unit]
-Description=Wattkeeper node agent
+Description=Strom node agent
 After=network-online.target nut-server.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/wattkeeper-agent --config-dir /etc/nut --listen :80
+ExecStart=/usr/local/bin/strom-agent --config-dir /etc/nut --listen :80
 Restart=on-failure
 RestartSec=5s
 

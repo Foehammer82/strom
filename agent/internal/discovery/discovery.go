@@ -15,7 +15,7 @@ import (
 const (
 	defaultDomain     = "local."
 	defaultPort       = 80
-	defaultService    = "_wattkeeper._tcp"
+	defaultService    = "_strom._tcp"
 	devTreeSerialPath = "/sys/firmware/devicetree/base/serial-number"
 	machineIDPath     = "/etc/machine-id"
 	procCPUInfoPath   = "/proc/cpuinfo"
@@ -228,7 +228,7 @@ func instanceName(serial string) string {
 	if len(identifier) > 4 {
 		identifier = identifier[len(identifier)-4:]
 	}
-	return "wkeeper-node-" + identifier
+	return "strom-node-" + identifier
 }
 
 func txtRecords(meta Metadata, upsCount int) []string {

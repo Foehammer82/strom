@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
+	"github.com/Foehammer82/strom/agent/internal/nutconf"
 )
 
 type Scanner struct {

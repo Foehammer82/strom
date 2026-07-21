@@ -1,16 +1,16 @@
 services:
-  wattkeeper-controller:
+  strom-controller:
     build:
       context: ..
       dockerfile: controller/Dockerfile
       args:
         VERSION: dev
-    image: wattkeeper-controller:dev
+    image: strom-controller:dev
     ports:
       - "9000:9000"
     volumes:
-      - wattkeeper-controller-data:/data
+      - strom-controller-data:/data
     restart: unless-stopped
 
 volumes:
-  wattkeeper-controller-data:
+  strom-controller-data:

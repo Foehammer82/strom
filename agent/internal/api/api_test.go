@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
+	"github.com/Foehammer82/strom/agent/internal/nutconf"
 )
 
 func TestHealthzReturnsAgentMetricsAndUPSStatus(t *testing.T) {
@@ -219,7 +219,7 @@ func TestIndexRendersHTMLDashboard(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
 	}
 	body := recorder.Body.String()
-	for _, want := range []string{"Wattkeeper Node", "Refresh", "/assets/app.js", "/assets/styles.css", "ups-a", "usbhid-ups", "OL"} {
+	for _, want := range []string{"Strom Node", "Refresh", "/assets/app.js", "/assets/styles.css", "ups-a", "usbhid-ups", "OL"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
@@ -464,7 +464,7 @@ func TestAgentUpdateRequiresValidControllerSignature(t *testing.T) {
 
 	tempDir := t.TempDir()
 	adoptionPath := filepath.Join(tempDir, "adoption.json")
-	agentBinaryPath := filepath.Join(tempDir, "wattkeeper-agent")
+	agentBinaryPath := filepath.Join(tempDir, "strom-agent")
 	if err := os.WriteFile(agentBinaryPath, []byte("old-agent"), 0o755); err != nil {
 		t.Fatalf("write initial agent binary: %v", err)
 	}
@@ -1207,7 +1207,7 @@ func cookieByName(cookies []*http.Cookie, name string) *http.Cookie {
 // testAdminPassword is the password used to bootstrap the local admin
 // account in tests. There is no built-in default password; the first
 // browser client to reach a fresh node must set one via /auth/bootstrap.
-const testAdminPassword = "wattkeeper-test-admin-pass"
+const testAdminPassword = "strom-test-admin-pass"
 
 // loginAsDefaultAdmin bootstraps the local admin account with
 // testAdminPassword and returns the resulting session cookies.
@@ -1252,7 +1252,7 @@ func testGenerateControllerCA(t *testing.T) (string, *ecdsa.PrivateKey) {
 	}
 	template := &x509.Certificate{
 		SerialNumber:          serialNumber,
-		Subject:               pkix.Name{CommonName: "Wattkeeper Controller CA Test"},
+		Subject:               pkix.Name{CommonName: "Strom Controller CA Test"},
 		NotBefore:             time.Now().Add(-1 * time.Hour).UTC(),
 		NotAfter:              time.Now().AddDate(5, 0, 0).UTC(),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,

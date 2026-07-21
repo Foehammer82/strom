@@ -24,12 +24,12 @@ COPY --from=web-build /src/controller/web/dist ./controller/cmd/controller/asset
 WORKDIR /src/controller
 ARG VERSION=dev
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -ldflags "-X main.version=${VERSION}" -o /out/wattkeeper-controller ./cmd/controller
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -ldflags "-X main.version=${VERSION}" -o /out/strom-controller ./cmd/controller
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
-COPY --from=build /out/wattkeeper-controller /app/wattkeeper-controller
+COPY --from=build /out/strom-controller /app/strom-controller
 VOLUME ["/data"]
 EXPOSE 9000
-ENTRYPOINT ["/app/wattkeeper-controller"]
+ENTRYPOINT ["/app/strom-controller"]
 CMD ["--data-dir=/data", "--listen=:9000"]

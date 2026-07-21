@@ -1,7 +1,7 @@
-site_name: Wattkeeper Docs
-site_description: User-facing documentation for Wattkeeper nodes, images, and future controller workflows.
-repo_url: https://github.com/Foehammer82/wattkeeper
-repo_name: Foehammer82/wattkeeper
+site_name: Strom Docs
+site_description: User-facing documentation for Strom nodes, images, and future controller workflows.
+repo_url: https://github.com/Foehammer82/strom
+repo_name: Foehammer82/strom
 edit_uri: edit/main/docs/
 theme:
   name: material

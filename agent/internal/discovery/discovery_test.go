@@ -24,8 +24,8 @@ func TestResolveIdentityPrefersCPUInfoSerial(t *testing.T) {
 	if identity.Serial != "00000000abcdef12" {
 		t.Fatalf("Serial = %q, want %q", identity.Serial, "00000000abcdef12")
 	}
-	if identity.Instance != "wkeeper-node-ef12" {
-		t.Fatalf("Instance = %q, want %q", identity.Instance, "wkeeper-node-ef12")
+	if identity.Instance != "strom-node-ef12" {
+		t.Fatalf("Instance = %q, want %q", identity.Instance, "strom-node-ef12")
 	}
 }
 
@@ -49,8 +49,8 @@ func TestResolveIdentityFallsBackToMachineID(t *testing.T) {
 	if identity.Serial != "machine-id-1234" {
 		t.Fatalf("Serial = %q, want %q", identity.Serial, "machine-id-1234")
 	}
-	if identity.Instance != "wkeeper-node-1234" {
-		t.Fatalf("Instance = %q, want %q", identity.Instance, "wkeeper-node-1234")
+	if identity.Instance != "strom-node-1234" {
+		t.Fatalf("Instance = %q, want %q", identity.Instance, "strom-node-1234")
 	}
 }
 
@@ -59,7 +59,7 @@ func TestAdvertiserUpdatesTXTOnlyWhenCountChanges(t *testing.T) {
 
 	announcement := &fakeAnnouncement{}
 	advertiser := &Advertiser{
-		meta: Metadata{Serial: "serial1234", Instance: "wkeeper-node-1234", Version: "1.2.3", Port: 8080},
+		meta: Metadata{Serial: "serial1234", Instance: "strom-node-1234", Version: "1.2.3", Port: 8080},
 		reg:  fakeRegistrar{announcement: announcement},
 	}
 

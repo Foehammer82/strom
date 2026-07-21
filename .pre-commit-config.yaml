@@ -16,9 +16,9 @@ repos:
 
   - repo: local
     hooks:
-      - id: wk-check-lint
-        name: wk check lint
-        entry: uv run wk check lint
+      - id: strom-check-lint
+        name: strom check lint
+        entry: uv run strom check lint
         language: system
         pass_filenames: false
         files: ^(agent|controller)/.*\.go$

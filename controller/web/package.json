@@ -1,5 +1,5 @@
 {
-  "name": "wattkeeper-controller-web",
+  "name": "strom-controller-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",

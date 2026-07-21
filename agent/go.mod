@@ -1,4 +1,4 @@
-module github.com/Foehammer82/wattkeeper/agent
+module github.com/Foehammer82/strom/agent
 
 go 1.26.0
 

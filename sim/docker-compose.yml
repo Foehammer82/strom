@@ -1,11 +1,11 @@
 services:
-  wattkeeper-agent:
+  strom-agent:
     build:
       context: ..
       dockerfile: agent/Dockerfile
       args:
         VERSION: dev
-    image: wattkeeper-agent:dev
+    image: strom-agent:dev
     environment:
       AGENT_SIM_DIR: /sim/dummy-ups
       AGENT_DEMO_MODE: "true"
@@ -16,9 +16,9 @@ services:
       - ./dummy-ups:/sim/dummy-ups
     restart: unless-stopped
     networks:
-      - wattkeeper
+      - strom
 
-  wattkeeper-controller:
+  strom-controller:
     build:
       context: ..
       dockerfile: controller/Dockerfile
@@ -30,10 +30,10 @@ services:
       - --data-dir=/data
       - --listen=:9000
       - --poll-interval=5s
-      - --discovery-seeds=${DISCOVERY_SEEDS:-wattkeeper-agent:80}
+      - --discovery-seeds=${DISCOVERY_SEEDS:-strom-agent:80}
       - --mqtt-broker=tcp://mosquitto:1883
       - --mqtt-discovery-prefix=homeassistant
-      - --mqtt-state-prefix=wattkeeper
+      - --mqtt-state-prefix=strom
       - --aggregate-nut-listen=:3493
       - --aggregate-nut-enabled=true
       - --aggregate-nut-user=controller
@@ -45,7 +45,7 @@ services:
       - mosquitto
     restart: unless-stopped
     networks:
-      - wattkeeper
+      - strom
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -53,7 +53,7 @@ services:
       - "1883:1883"
     restart: unless-stopped
     networks:
-      - wattkeeper
+      - strom
 
   home-assistant:
     image: ghcr.io/home-assistant/home-assistant:stable
@@ -64,10 +64,10 @@ services:
       - "8123:8123"
     restart: unless-stopped
     networks:
-      - wattkeeper
+      - strom
 
 # mDNS in Docker is platform-dependent. If pending nodes are not discovered,
 # use host networking for agent/controller or run an mDNS reflector sidecar.
 networks:
-  wattkeeper:
+  strom:
     driver: bridge

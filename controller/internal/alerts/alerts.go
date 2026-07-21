@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/controller/internal/registry"
+	"github.com/Foehammer82/strom/controller/internal/registry"
 )
 
 const (

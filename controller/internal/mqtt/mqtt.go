@@ -10,7 +10,7 @@ import (
 
 const (
 	defaultDiscoveryPrefix = "homeassistant"
-	defaultStatePrefix     = "wattkeeper"
+	defaultStatePrefix     = "strom"
 )
 
 type Config struct {
@@ -90,8 +90,8 @@ func DiscoveryMessages(cfg Config, node NodeInfo, ups UPSInfo) ([]PublishMessage
 	stateTopic := fmt.Sprintf("%s/nodes/%s/ups/%s/state", statePrefix, slug(node.ID), slug(ups.Name))
 	commandTopic := fmt.Sprintf("%s/nodes/%s/ups/%s/command", statePrefix, slug(node.ID), slug(ups.Name))
 	device := map[string]any{
-		"identifiers":  []string{"wattkeeper-node-" + node.ID},
-		"manufacturer": "Wattkeeper",
+		"identifiers":  []string{"strom-node-" + node.ID},
+		"manufacturer": "Strom",
 		"model":        firstNonEmpty(node.DisplayName, node.Hostname, node.ID),
 		"name":         firstNonEmpty(node.DisplayName, node.Hostname, node.ID),
 		"sw_version":   node.Version,

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/controller/internal/registry"
+	"github.com/Foehammer82/strom/controller/internal/registry"
 )
 
 func TestEngineEvaluateOnceCreatesDebouncedEvents(t *testing.T) {
@@ -18,7 +18,7 @@ func TestEngineEvaluateOnceCreatesDebouncedEvents(t *testing.T) {
 	}
 	defer store.Close()
 	now := time.Date(2026, 7, 3, 18, 0, 0, 0, time.UTC)
-	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{ID: "serial-1234", Instance: "wkeeper-node-1234", Hostname: "wkeeper-node-1234.local", Address: "192.168.1.50", Port: 80, Version: "v0.3.0", UPSCount: 1, LastSeen: now.Add(-10 * time.Second)}); err != nil {
+	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{ID: "serial-1234", Instance: "strom-node-1234", Hostname: "strom-node-1234.local", Address: "192.168.1.50", Port: 80, Version: "v0.3.0", UPSCount: 1, LastSeen: now.Add(-10 * time.Second)}); err != nil {
 		t.Fatalf("UpsertDiscoveredNode() error = %v", err)
 	}
 	if err := store.SetNodeAdopted(context.Background(), "serial-1234", true); err != nil {
@@ -75,7 +75,7 @@ func TestEngineNodeOfflineUsesLastSeenThreshold(t *testing.T) {
 	}
 	defer store.Close()
 	now := time.Date(2026, 7, 3, 18, 0, 0, 0, time.UTC)
-	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{ID: "serial-1234", Instance: "wkeeper-node-1234", Hostname: "wkeeper-node-1234.local", Address: "192.168.1.50", Port: 80, Version: "v0.3.0", UPSCount: 1, LastSeen: now.Add(-1 * time.Minute)}); err != nil {
+	if err := store.UpsertDiscoveredNode(context.Background(), registry.Node{ID: "serial-1234", Instance: "strom-node-1234", Hostname: "strom-node-1234.local", Address: "192.168.1.50", Port: 80, Version: "v0.3.0", UPSCount: 1, LastSeen: now.Add(-1 * time.Minute)}); err != nil {
 		t.Fatalf("UpsertDiscoveredNode() error = %v", err)
 	}
 	if err := store.SetNodeAdopted(context.Background(), "serial-1234", true); err != nil {

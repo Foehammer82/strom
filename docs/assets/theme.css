@@ -1,76 +1,76 @@
 :root {
-  --wk-bg: #f4efe7;
-  --wk-bg-alt: #efe7da;
-  --wk-panel: #fffaf2;
-  --wk-panel-strong: rgba(255, 250, 242, 0.96);
-  --wk-ink: #1f2933;
-  --wk-muted: #5f6c7b;
-  --wk-line: #d7c8b3;
-  --wk-accent: #0f766e;
-  --wk-accent-strong: #115e59;
-  --wk-accent-soft: rgba(15, 118, 110, 0.12);
-  --wk-shadow: 0 18px 40px rgba(31, 41, 51, 0.08);
+  --strom-bg: #f4efe7;
+  --strom-bg-alt: #efe7da;
+  --strom-panel: #fffaf2;
+  --strom-panel-strong: rgba(255, 250, 242, 0.96);
+  --strom-ink: #1f2933;
+  --strom-muted: #5f6c7b;
+  --strom-line: #d7c8b3;
+  --strom-accent: #0f766e;
+  --strom-accent-strong: #115e59;
+  --strom-accent-soft: rgba(15, 118, 110, 0.12);
+  --strom-shadow: 0 18px 40px rgba(31, 41, 51, 0.08);
 
-  --md-default-bg-color: var(--wk-bg);
-  --md-default-fg-color: var(--wk-ink);
-  --md-default-fg-color--light: var(--wk-muted);
-  --md-default-fg-color--lighter: color-mix(in srgb, var(--wk-muted) 72%, white);
-  --md-default-fg-color--lightest: color-mix(in srgb, var(--wk-muted) 38%, white);
-  --md-primary-fg-color: var(--wk-accent);
-  --md-primary-fg-color--light: var(--wk-accent);
-  --md-primary-fg-color--dark: var(--wk-accent-strong);
-  --md-accent-fg-color: var(--wk-accent);
-  --md-accent-fg-color--transparent: var(--wk-accent-soft);
-  --md-typeset-a-color: var(--wk-accent);
+  --md-default-bg-color: var(--strom-bg);
+  --md-default-fg-color: var(--strom-ink);
+  --md-default-fg-color--light: var(--strom-muted);
+  --md-default-fg-color--lighter: color-mix(in srgb, var(--strom-muted) 72%, white);
+  --md-default-fg-color--lightest: color-mix(in srgb, var(--strom-muted) 38%, white);
+  --md-primary-fg-color: var(--strom-accent);
+  --md-primary-fg-color--light: var(--strom-accent);
+  --md-primary-fg-color--dark: var(--strom-accent-strong);
+  --md-accent-fg-color: var(--strom-accent);
+  --md-accent-fg-color--transparent: var(--strom-accent-soft);
+  --md-typeset-a-color: var(--strom-accent);
   --md-code-bg-color: #f1eadf;
-  --md-code-fg-color: var(--wk-ink);
+  --md-code-fg-color: var(--strom-ink);
   --md-footer-bg-color: #e8dcc8;
   --md-footer-bg-color--dark: #ddcfb8;
-  --md-footer-fg-color: var(--wk-ink);
-  --md-footer-fg-color--light: var(--wk-muted);
-  --md-footer-fg-color--lighter: color-mix(in srgb, var(--wk-muted) 45%, white);
+  --md-footer-fg-color: var(--strom-ink);
+  --md-footer-fg-color--light: var(--strom-muted);
+  --md-footer-fg-color--lighter: color-mix(in srgb, var(--strom-muted) 45%, white);
 }
 
 [data-md-color-scheme="slate"] {
-  --wk-bg: #1f2529;
-  --wk-bg-alt: #273137;
-  --wk-panel: #2a3339;
-  --wk-panel-strong: rgba(42, 51, 57, 0.96);
-  --wk-ink: #e8ece6;
-  --wk-muted: #b8c1bb;
-  --wk-line: #435159;
-  --wk-accent: #55b4a6;
-  --wk-accent-strong: #7ad1c2;
-  --wk-accent-soft: rgba(85, 180, 166, 0.18);
-  --wk-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  --strom-bg: #1f2529;
+  --strom-bg-alt: #273137;
+  --strom-panel: #2a3339;
+  --strom-panel-strong: rgba(42, 51, 57, 0.96);
+  --strom-ink: #e8ece6;
+  --strom-muted: #b8c1bb;
+  --strom-line: #435159;
+  --strom-accent: #55b4a6;
+  --strom-accent-strong: #7ad1c2;
+  --strom-accent-soft: rgba(85, 180, 166, 0.18);
+  --strom-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
 
-  --md-default-bg-color: var(--wk-bg);
+  --md-default-bg-color: var(--strom-bg);
   --md-default-bg-color--light: #273137;
   --md-default-bg-color--lighter: #313d44;
   --md-default-bg-color--lightest: #38454d;
-  --md-default-fg-color: var(--wk-ink);
-  --md-default-fg-color--light: var(--wk-muted);
-  --md-default-fg-color--lighter: color-mix(in srgb, var(--wk-muted) 75%, black);
-  --md-default-fg-color--lightest: color-mix(in srgb, var(--wk-muted) 45%, black);
+  --md-default-fg-color: var(--strom-ink);
+  --md-default-fg-color--light: var(--strom-muted);
+  --md-default-fg-color--lighter: color-mix(in srgb, var(--strom-muted) 75%, black);
+  --md-default-fg-color--lightest: color-mix(in srgb, var(--strom-muted) 45%, black);
   --md-primary-fg-color: #20292e;
   --md-primary-fg-color--light: #2a3339;
   --md-primary-fg-color--dark: #182024;
-  --md-accent-fg-color: var(--wk-accent);
+  --md-accent-fg-color: var(--strom-accent);
   --md-accent-fg-color--transparent: rgba(85, 180, 166, 0.12);
   --md-typeset-a-color: #7ad1c2;
   --md-code-bg-color: #20292e;
   --md-code-fg-color: #edf3ed;
   --md-footer-bg-color: #1b2226;
   --md-footer-bg-color--dark: #151b1e;
-  --md-footer-fg-color: var(--wk-ink);
-  --md-footer-fg-color--light: var(--wk-muted);
-  --md-footer-fg-color--lighter: color-mix(in srgb, var(--wk-muted) 55%, black);
+  --md-footer-fg-color: var(--strom-ink);
+  --md-footer-fg-color--light: var(--strom-muted);
+  --md-footer-fg-color--lighter: color-mix(in srgb, var(--strom-muted) 55%, black);
 }
 
 body {
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.5), transparent 28%),
-    linear-gradient(180deg, var(--wk-bg-alt) 0%, var(--wk-bg) 55%, #efe9df 100%);
+    linear-gradient(180deg, var(--strom-bg-alt) 0%, var(--strom-bg) 55%, #efe9df 100%);
   background-attachment: fixed;
   background-repeat: no-repeat;
   background-size: cover;
@@ -80,7 +80,7 @@ body {
 body[data-md-color-scheme="slate"] {
   background:
     radial-gradient(circle at top left, rgba(122, 209, 194, 0.08), transparent 30%),
-    linear-gradient(180deg, #243036 0%, var(--wk-bg) 55%, #1b2125 100%);
+    linear-gradient(180deg, #243036 0%, var(--strom-bg) 55%, #1b2125 100%);
   background-attachment: fixed;
   background-repeat: no-repeat;
   background-size: cover;
@@ -88,8 +88,8 @@ body[data-md-color-scheme="slate"] {
 
 .md-header {
   background: rgba(255, 250, 242, 0.92);
-  color: var(--wk-ink);
-  border-bottom: 1px solid var(--wk-line);
+  color: var(--strom-ink);
+  border-bottom: 1px solid var(--strom-line);
   box-shadow: 0 8px 24px rgba(31, 41, 51, 0.06);
   backdrop-filter: blur(10px);
 }
@@ -108,12 +108,12 @@ body[data-md-color-scheme="slate"] {
 .md-search__input,
 .md-search__output,
 .md-search-result__meta {
-  color: var(--wk-ink);
+  color: var(--strom-ink);
 }
 
 .md-tabs {
   background: rgba(255, 250, 242, 0.88);
-  border-bottom: 1px solid var(--wk-line);
+  border-bottom: 1px solid var(--strom-line);
 }
 
 [data-md-color-scheme="slate"] .md-tabs {
@@ -129,10 +129,10 @@ body[data-md-color-scheme="slate"] {
 .md-search__form,
 .md-search-result,
 .md-typeset table:not([class]) {
-  background: var(--wk-panel-strong);
-  border: 1px solid var(--wk-line);
+  background: var(--strom-panel-strong);
+  border: 1px solid var(--strom-line);
   border-radius: 18px;
-  box-shadow: var(--wk-shadow);
+  box-shadow: var(--strom-shadow);
 }
 
 .md-content__inner {
@@ -153,11 +153,11 @@ body[data-md-color-scheme="slate"] {
 .md-tabs__link--active,
 .md-typeset a:hover,
 .md-nav__link:hover {
-  color: var(--wk-accent-strong);
+  color: var(--strom-accent-strong);
 }
 
 .md-search__form {
-  background: var(--wk-panel);
+  background: var(--strom-panel);
 }
 
 [data-md-color-scheme="slate"] .md-search__form {
@@ -165,36 +165,36 @@ body[data-md-color-scheme="slate"] {
 }
 
 .md-search__input::placeholder {
-  color: var(--wk-muted);
+  color: var(--strom-muted);
 }
 
 .md-typeset h1,
 .md-typeset h2,
 .md-typeset h3,
 .md-typeset h4 {
-  color: var(--wk-ink);
+  color: var(--strom-ink);
   letter-spacing: -0.01em;
 }
 
 .md-typeset .admonition,
 .md-typeset details {
-  background: var(--wk-panel);
-  border: 1px solid var(--wk-line);
+  background: var(--strom-panel);
+  border: 1px solid var(--strom-line);
   border-radius: 16px;
-  box-shadow: var(--wk-shadow);
+  box-shadow: var(--strom-shadow);
 }
 
 .md-typeset .admonition-title,
 .md-typeset summary {
-  background: var(--wk-accent-soft);
-  color: var(--wk-ink);
+  background: var(--strom-accent-soft);
+  color: var(--strom-ink);
 }
 
 [data-md-color-scheme="slate"] .md-nav__link--active,
 [data-md-color-scheme="slate"] .md-tabs__link--active,
 [data-md-color-scheme="slate"] .md-typeset a:hover,
 [data-md-color-scheme="slate"] .md-nav__link:hover {
-  color: var(--wk-accent-strong);
+  color: var(--strom-accent-strong);
 }
 
 .md-typeset code {
@@ -213,12 +213,12 @@ body[data-md-color-scheme="slate"] {
 .md-top,
 .md-typeset .tabbed-labels > label,
 .md-typeset .task-list-indicator:before {
-  color: var(--wk-accent);
+  color: var(--strom-accent);
 }
 
 .md-footer-meta,
 .md-footer {
-  border-top: 1px solid var(--wk-line);
+  border-top: 1px solid var(--strom-line);
 }
 
 @media screen and (min-width: 60em) {

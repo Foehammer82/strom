@@ -98,7 +98,7 @@ export default function HeaderMenu({
         </MenuItem>
         <MenuItem
           component="a"
-          href="https://foehammer82.github.io/wattkeeper/getting-started/"
+          href="https://foehammer82.github.io/strom/getting-started/"
           target="_blank"
           rel="noreferrer"
           onClick={handleClose}

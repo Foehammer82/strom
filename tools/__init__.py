@@ -1,1 +1,1 @@
-"""Repo tooling helpers for Wattkeeper."""
+"""Repo tooling helpers for Strom."""

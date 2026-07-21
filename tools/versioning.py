@@ -1,7 +1,7 @@
-"""Pure helper functions for Wattkeeper release versioning.
+"""Pure helper functions for Strom release versioning.
 
 These functions intentionally avoid subprocess/CLI concerns so they can be
-unit tested directly. `tools/__main__.py` wires them into the `wk release`
+unit tested directly. `tools/__main__.py` wires them into the `strom release`
 commands. See CONTRIBUTING.md#release-and-maintainer-notes for the release
 policy these helpers implement.
 """
@@ -48,9 +48,9 @@ def render_train_toml(
         raise ValueError("major/minor must be non-negative")
     pr_binaries_value = "true" if pr_binaries else "false"
     return (
-        "# Wattkeeper release train control.\n"
+        "# Strom release train control.\n"
         "# See CONTRIBUTING.md#release-and-maintainer-notes for how this file is used.\n"
-        "# Managed by `wk release set-train`; edit via that command or a reviewed PR.\n"
+        "# Managed by `strom release set-train`; edit via that command or a reviewed PR.\n"
         "\n"
         "[train]\n"
         f"major = {major}\n"

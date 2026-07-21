@@ -15,7 +15,7 @@ func TestDiscoveryMessagesPublishExpectedHomeAssistantEntities(t *testing.T) {
 	messages, err := DiscoveryMessages(Config{}, NodeInfo{
 		ID:          "serial-1234",
 		DisplayName: "Lab Rack Node",
-		Hostname:    "wkeeper-node-1234.local",
+		Hostname:    "strom-node-1234.local",
 		Location:    "Utility Closet",
 		Online:      true,
 		CommsState:  "healthy",
@@ -44,10 +44,10 @@ func TestDiscoveryMessagesPublishExpectedHomeAssistantEntities(t *testing.T) {
 	if err := json.Unmarshal(messages[0].Payload, &payload); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if payload["availability_topic"] != "wattkeeper/nodes/serial_1234/availability" {
+	if payload["availability_topic"] != "strom/nodes/serial_1234/availability" {
 		t.Fatalf("payload = %#v, want availability_topic", payload)
 	}
-	if payload["state_topic"] != "wattkeeper/nodes/serial_1234/ups/ups_a/state" {
+	if payload["state_topic"] != "strom/nodes/serial_1234/ups/ups_a/state" {
 		t.Fatalf("payload = %#v, want state_topic", payload)
 	}
 }
@@ -61,7 +61,7 @@ func TestStateAndAvailabilityMessagesUseStableTopics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StateMessage() error = %v", err)
 	}
-	if message.Topic != "wattkeeper/nodes/serial_1234/ups/ups_a/state" {
+	if message.Topic != "strom/nodes/serial_1234/ups/ups_a/state" {
 		t.Fatalf("topic = %q, want stable state topic", message.Topic)
 	}
 	var payload map[string]any
@@ -75,7 +75,7 @@ func TestStateAndAvailabilityMessagesUseStableTopics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AvailabilityMessage() error = %v", err)
 	}
-	if availability.Topic != "wattkeeper/nodes/serial_1234/availability" || string(availability.Payload) != "online" {
+	if availability.Topic != "strom/nodes/serial_1234/availability" || string(availability.Payload) != "online" {
 		t.Fatalf("availability = %#v, want online availability topic", availability)
 	}
 }

@@ -20,24 +20,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Foehammer82/wattkeeper/agent/internal/api"
-	"github.com/Foehammer82/wattkeeper/agent/internal/discovery"
-	"github.com/Foehammer82/wattkeeper/agent/internal/hotplug"
-	"github.com/Foehammer82/wattkeeper/agent/internal/nutconf"
-	"github.com/Foehammer82/wattkeeper/agent/internal/services"
-	"github.com/Foehammer82/wattkeeper/agent/internal/sim"
-	"github.com/Foehammer82/wattkeeper/agent/nodeapi"
+	"github.com/Foehammer82/strom/agent/internal/api"
+	"github.com/Foehammer82/strom/agent/internal/discovery"
+	"github.com/Foehammer82/strom/agent/internal/hotplug"
+	"github.com/Foehammer82/strom/agent/internal/nutconf"
+	"github.com/Foehammer82/strom/agent/internal/services"
+	"github.com/Foehammer82/strom/agent/internal/sim"
+	"github.com/Foehammer82/strom/agent/nodeapi"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	defaultAgentConfigPath = "/etc/wattkeeper/agent.yaml"
-	defaultNamesPath       = "/var/lib/wattkeeper/names.json"
-	defaultAdoptionPath    = "/var/lib/wattkeeper/adoption.json"
-	defaultTLSCertPath     = "/var/lib/wattkeeper/node-api.crt"
-	defaultTLSKeyPath      = "/var/lib/wattkeeper/node-api.key"
-	factoryResetMarkerPath = "/boot/firmware/wattkeeper-factory-reset"
-	factoryResetLegacyPath = "/boot/wattkeeper-factory-reset"
+	defaultAgentConfigPath = "/etc/strom/agent.yaml"
+	defaultNamesPath       = "/var/lib/strom/names.json"
+	defaultAdoptionPath    = "/var/lib/strom/adoption.json"
+	defaultTLSCertPath     = "/var/lib/strom/node-api.crt"
+	defaultTLSKeyPath      = "/var/lib/strom/node-api.key"
+	factoryResetMarkerPath = "/boot/firmware/strom-factory-reset"
+	factoryResetLegacyPath = "/boot/strom-factory-reset"
 )
 
 var version = "dev"
@@ -115,7 +115,7 @@ type fileAgentConfig struct {
 }
 
 func main() {
-	logger := log.New(os.Stdout, "wattkeeper-agent: ", log.LstdFlags)
+	logger := log.New(os.Stdout, "strom-agent: ", log.LstdFlags)
 
 	if len(os.Args) > 1 && os.Args[1] == "reset" {
 		if err := runResetCommand(logger, os.Args[2:]); err != nil {
@@ -147,7 +147,7 @@ func main() {
 
 func parseFlags(args []string) (config, error) {
 	var cfg config
-	flags := flag.NewFlagSet("wattkeeper-agent", flag.ContinueOnError)
+	flags := flag.NewFlagSet("strom-agent", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
 	flags.StringVar(&cfg.configDir, "config-dir", "/etc/nut", "directory containing NUT configuration")
@@ -159,7 +159,7 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.simulate, "simulate", "", "directory containing simulated *.dev fixtures; bypasses nut-scanner and hotplug netlink")
 	flags.StringVar(&cfg.nodeID, "node-id", "", "optional node identity override for container and simulation replicas")
 	flags.BoolVar(&cfg.httpAuth, "http-auth", true, "require bootstrap and Basic Auth for the node dashboard and detailed status routes")
-	flags.StringVar(&cfg.authPath, "http-auth-file", "/var/lib/wattkeeper/webui-auth.json", "path to the node web auth file")
+	flags.StringVar(&cfg.authPath, "http-auth-file", "/var/lib/strom/webui-auth.json", "path to the node web auth file")
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -189,7 +189,7 @@ func runResetCommand(logger *log.Logger, args []string) error {
 
 func parseResetFlags(args []string) (resetConfig, error) {
 	var cfg resetConfig
-	flags := flag.NewFlagSet("wattkeeper-agent reset", flag.ContinueOnError)
+	flags := flag.NewFlagSet("strom-agent reset", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&cfg.adoptionPath, "adoption-file", defaultAdoptionPath, "path to the node adoption state file")
 	flags.StringVar(&cfg.tlsCertPath, "tls-cert-file", defaultTLSCertPath, "path to the controller API TLS certificate")

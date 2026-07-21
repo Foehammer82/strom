@@ -1,12 +1,12 @@
-# Wattkeeper Copilot Instructions
+# Strom Copilot Instructions
 
-This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making non-trivial changes so the current phase, architecture, and intended repo layout stay aligned.
+This repository is the `strom` monorepo. Read `ROADMAP.md` before making non-trivial changes so the current phase, architecture, and intended repo layout stay aligned.
 
 ## Copilot workflow
 
 - Workspace slash-command prompts for roadmap work live in `.github/prompts/`. When a task maps to one of those phases, prefer the matching prompt file over ad hoc phase prompts.
 - Project-specific reusable workflows live in `.github/skills/`. Use those for repeatable validation and Raspberry Pi debugging tasks instead of re-deriving the procedure each time.
-- For operational command execution (docs, simulation, smoke, hooks, and recurring repo tasks), use the `cli-tools-workflow` skill and prefer `uv run wk ...` (or `wk ...` in an activated environment) so Copilot exercises the same tooling users rely on.
+- For operational command execution (docs, simulation, smoke, hooks, and recurring repo tasks), use the `cli-tools-workflow` skill and prefer `uv run strom ...` (or `strom ...` in an activated environment) so Copilot exercises the same tooling users rely on.
 - Treat `CONTRIBUTING.md` as a required companion to this file: follow the contributor workflow, validation expectations, and naming conventions documented there for all non-trivial changes.
 - Before starting roadmap-driven work, review the relevant checklist items in `ROADMAP.md`. As items become fully complete, update `ROADMAP.md` in the same change and check off only the items that are actually done.
 - As roadmap-driven work changes what ships today, how releases are produced, or how operators should understand the current product surface, update `README.md` in the same change so it stays accurate as implementation progresses.
@@ -41,13 +41,13 @@ This repository is the `wattkeeper` monorepo. Read `ROADMAP.md` before making no
 
 ## Build and verification
 
-- Keep `uv run wk check test` and the relevant build command working after each change.
-- Prefer focused unit tests first, then repo-level verification using the top-level `wk` CLI commands.
-- Before you finish any code-changing task, run `uv run wk hooks run` (or the equivalent `pre-commit run --all-files`) and make sure it passes; if it fails, fix the hooks or the affected files before stopping.
-- When release automation or packaging changes, preserve the current version injection and tag-driven workflow behavior in the `wk` CLI and `.github/workflows/` files unless the task explicitly changes the release strategy.
+- Keep `uv run strom check test` and the relevant build command working after each change.
+- Prefer focused unit tests first, then repo-level verification using the top-level `strom` CLI commands.
+- Before you finish any code-changing task, run `uv run strom hooks run` (or the equivalent `pre-commit run --all-files`) and make sure it passes; if it fails, fix the hooks or the affected files before stopping.
+- When release automation or packaging changes, preserve the current version injection and tag-driven workflow behavior in the `strom` CLI and `.github/workflows/` files unless the task explicitly changes the release strategy.
 - When asked to help with releases, default to the safe sequence: verify the target commit is merged and green, cut an annotated `-rcN` tag first when validating automation, then cut a stable SemVer tag only after the prerelease result is acceptable.
 - For Go code, keep APIs small, use clear package boundaries under `internal/`, and avoid speculative abstractions for later phases.
-- For frontend work, treat the controller as a full React + TypeScript GUI app and keep it directly aligned with the controller API, roadmap milestones, and the shared Wattkeeper visual language already established by the node UI.
+- For frontend work, treat the controller as a full React + TypeScript GUI app and keep it directly aligned with the controller API, roadmap milestones, and the shared Strom visual language already established by the node UI.
 
 ## What to avoid
 

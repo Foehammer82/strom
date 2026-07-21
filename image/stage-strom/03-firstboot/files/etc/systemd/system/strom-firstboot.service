@@ -1,0 +1,12 @@
+[Unit]
+Description=Strom first-boot initialization
+After=apply_os_config.service local-fs.target systemd-remount-fs.service
+Before=strom-agent.service
+ConditionPathExists=!/var/lib/strom/.firstboot-complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/strom-firstboot.sh
+
+[Install]
+WantedBy=multi-user.target
