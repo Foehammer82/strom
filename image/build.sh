@@ -13,7 +13,7 @@ TMP_PARENT=${TMPDIR:-/tmp}
 QEMU_BIN=''
 QEMU_HINT=''
 BINFMT_HELPER_IMAGE=${BINFMT_HELPER_IMAGE:-tonistiigi/binfmt:latest}
-QEMU_HELPER_IMAGE=${QEMU_HELPER_IMAGE:-multiarch/qemu-user-static:latest}
+QEMU_HELPER_IMAGE=${QEMU_HELPER_IMAGE:-$BINFMT_HELPER_IMAGE}
 PI_GEN_CONTAINER_NAME=${CONTAINER_NAME:-pigen_work}
 KEEP_PI_GEN_CONTAINER=${PRESERVE_CONTAINER:-0}
 
@@ -114,7 +114,8 @@ extract_qemu_from_docker() {
 		echo "failed to create Docker helper container for qemu-aarch64" >&2
 		exit 1
 	fi
-	if ! docker cp "$container_name:/usr/bin/qemu-aarch64-static" "$BIN_DIR/qemu-aarch64"; then
+	if ! docker cp "$container_name:/usr/bin/qemu-aarch64-static" "$BIN_DIR/qemu-aarch64" 2>/dev/null && \
+		! docker cp "$container_name:/usr/bin/qemu-aarch64" "$BIN_DIR/qemu-aarch64"; then
 		docker rm -f "$container_name" >/dev/null 2>&1 || true
 		echo "failed to extract qemu-aarch64-static from ${QEMU_HELPER_IMAGE}" >&2
 		exit 1
