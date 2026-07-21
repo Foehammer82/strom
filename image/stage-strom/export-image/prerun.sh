@@ -30,7 +30,7 @@ truncate -s "${IMG_SIZE}" "${IMG_FILE}"
 parted --script "${IMG_FILE}" mklabel msdos
 parted --script "${IMG_FILE}" unit B mkpart primary fat32 "${BOOT_PART_START}" "$((BOOT_PART_START + BOOT_PART_SIZE - 1))"
 parted --script "${IMG_FILE}" unit B mkpart primary ext4 "${ROOT_PART_START}" "$((ROOT_PART_START + ROOT_PART_SIZE - 1))"
-parted --script "${IMG_FILE}" unit B mkpart primary ext4 "${STATE_PART_START}" "$((STATE_PART_START + STATE_PART_SIZE - 1))"
+parted --script "${IMG_FILE}" unit B mkpart primary ext4 "${STATE_PART_START}" "100%"
 
 echo "Creating loop device..."
 cnt=0

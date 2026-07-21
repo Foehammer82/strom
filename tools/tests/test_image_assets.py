@@ -32,6 +32,12 @@ def test_image_creates_and_mounts_persistent_state_partition() -> None:
     assert "mkfs.ext4 -L strom-state" in export
 
 
+def test_image_state_partition_ends_at_the_device_boundary() -> None:
+    export = EXPORT_PRERUN.read_text(encoding="utf-8")
+
+    assert 'mkpart primary ext4 "${STATE_PART_START}" "100%"' in export
+
+
 def test_agent_requires_persistent_state_mount() -> None:
     service = AGENT_SERVICE.read_text(encoding="utf-8")
 
