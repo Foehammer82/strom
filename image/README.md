@@ -59,6 +59,8 @@ This service does not replace or overwrite Raspberry Pi Imager's boot partition 
 
 The image adds a `strom-state` ext4 partition and mounts it at `/var/lib/strom`. This preserves local admin credentials, adoption state, controller TLS material, and stable UPS names across restarts and power loss. After that mount is available, first boot enables Raspberry Pi OverlayFS to keep ordinary root filesystem writes in RAM and reduce SD card wear; this may cause one additional reboot.
 
+On later boots, `strom-agent` does not wait for WiFi to become online before it starts its local HTTP, USB scanning, and NUT setup. Its mDNS advertisement retries until networking is available, so it can become discoverable shortly after WiFi reconnects.
+
 Images built before this change may have enabled Raspberry Pi OverlayFS without the `strom-state` partition. To restore persistence on an existing node until it can be reflashed, run `sudo raspi-config nonint do_overlayfs 1`, reboot, and confirm `findmnt -n -o FSTYPE /` no longer reports `overlay`. Set the local admin password again afterward. If the node had been adopted before the power loss, re-adopt it because its on-node controller trust material may also have been lost.
 
 ## Security Constraints
@@ -66,4 +68,4 @@ Images built before this change may have enabled Raspberry Pi OverlayFS without 
 - No WiFi credentials are baked into the image.
 - No SSH authorized keys are baked into the image.
 - No NUT passwords or controller credentials are baked into the image.
-- SSH is enabled in the base image, but password authentication is disabled; use Pi Imager to inject public keys for the `strom` user if you need shell access.
+- SSH is enabled in the base image, but password authentication is disabled; use Pi Imager to inject public keys for the `strom` user if you need shell access. After the node-local `admin` dashboard account has been configured, an operator can explicitly enable password SSH from node Settings. That creates a sudo-capable Linux `admin` account and uses the same password as the dashboard. Disabling SSH access or resetting the local dashboard auth revokes this password-login path.

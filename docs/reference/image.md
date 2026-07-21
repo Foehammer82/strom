@@ -62,6 +62,8 @@ Strom adds a first-boot service that:
 
 The `strom-state` partition preserves local admin credentials, controller trust material, adoption state, and stable UPS names across normal reboots and power loss. When OverlayFS is enabled, first boot may include a one-time additional reboot.
 
+On normal boots, the Strom agent starts local HTTP, USB scanning, and NUT configuration without waiting for WiFi to become online. mDNS registration retries in the background until the network is available, so discovery may follow the local dashboard and NUT service when WiFi is slow to reconnect.
+
 Images built before this change may have enabled Raspberry Pi OverlayFS without the persistent `strom-state` partition. To restore persistence on an existing node until it can be reflashed, run:
 
 ```sh

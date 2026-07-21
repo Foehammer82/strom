@@ -52,13 +52,16 @@ type authManager struct {
 }
 
 type storedAuth struct {
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	CreatedAt    time.Time `json:"created_at"`
-	UIEnabled    *bool     `json:"ui_enabled,omitempty"`
-	UIManaged    *bool     `json:"ui_managed,omitempty"`
-	ReadAPIKey   string    `json:"read_api_key,omitempty"`
-	WriteAPIKey  string    `json:"write_api_key,omitempty"`
+	Username        string    `json:"username"`
+	PasswordHash    string    `json:"password_hash"`
+	CreatedAt       time.Time `json:"created_at"`
+	UIEnabled       *bool     `json:"ui_enabled,omitempty"`
+	UIManaged       *bool     `json:"ui_managed,omitempty"`
+	SSHEnabled      *bool     `json:"ssh_enabled,omitempty"`
+	SSHPasswordHash string    `json:"ssh_password_hash,omitempty"`
+	ReadAPIKey      string    `json:"read_api_key,omitempty"`
+	WriteAPIKey     string    `json:"write_api_key,omitempty"`
+	APIDocsEnabled  *bool     `json:"api_docs_enabled,omitempty"`
 }
 
 type authSession struct {
@@ -76,6 +79,11 @@ type changePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
 	ConfirmPassword string `json:"confirm_password"`
+}
+
+type sshSettingRequest struct {
+	Enabled  bool   `json:"enabled"`
+	Password string `json:"password"`
 }
 
 type apiKeyRequest struct {
@@ -104,8 +112,11 @@ type settingsViewModel struct {
 	Username          string
 	UIEnabled         bool
 	UIManaged         bool
+	SSHEnabled        bool
+	SSHCommand        string
 	ReadAPIKeyExists  bool
 	WriteAPIKeyExists bool
+	APIDocsEnabled    bool
 	Error             string
 	Message           string
 	CSRFToken         string
@@ -239,6 +250,14 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 		.password-dialog-head p { margin:6px 0 0; }
 		.password-dialog form { margin-top:18px; }
 		.dialog-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+		.setting-switch-form { margin-top:18px; }
+		.setting-switch { display:inline-flex; min-height:44px; align-items:center; gap:10px; cursor:pointer; font-weight:700; }
+		.setting-switch input { position:absolute; inline-size:1px; block-size:1px; opacity:0; }
+		.setting-switch-track { position:relative; inline-size:44px; block-size:24px; border:1px solid var(--line); border-radius:999px; background:var(--input); transition:background .16s ease,border-color .16s ease; }
+		.setting-switch-track::after { content:""; position:absolute; inset:3px auto 3px 3px; inline-size:16px; border-radius:50%; background:var(--muted); transition:transform .16s ease,background .16s ease; }
+		.setting-switch input:checked + .setting-switch-track { border-color:var(--accent); background:var(--accent); }
+		.setting-switch input:checked + .setting-switch-track::after { transform:translateX(20px); background:#fff; }
+		.setting-switch input:focus-visible + .setting-switch-track { outline:3px solid color-mix(in srgb,var(--accent) 40%,transparent); outline-offset:3px; }
 		.api-key-list { display:grid; gap:14px; margin-top:16px; }
 		.api-key-row { padding-top:14px; border-top:1px solid var(--line); }
 		.api-key-row:first-child { padding-top:0; border-top:0; }
@@ -246,10 +265,15 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 		.api-key-label p { margin:4px 0 0; font-size:.9rem; }
 		.api-key-controls { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; margin-top:10px; }
 		.api-key-controls input { min-width:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+		.endpoint-links { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px; }
+		.endpoint-link { min-height:42px; }
 		.api-key-result { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; margin-top:16px; }
 		.api-key-result[hidden] { display:none; }
+		.ssh-command { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; margin-top:16px; }
+		.ssh-command pre { min-width:0; margin:0; padding:12px 14px; overflow:auto; border:1px solid var(--line); border-radius:12px; background:var(--input); color:var(--ink); font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
 		.dialog-error[hidden] { display:none; }
-		@media (max-width:720px) { .api-key-controls { grid-template-columns:1fr 1fr; } .api-key-controls input { grid-column:1 / -1; } .api-key-result { grid-template-columns:1fr; } }
+		@media (max-width:720px) { .api-key-controls { grid-template-columns:1fr 1fr; } .api-key-controls input { grid-column:1 / -1; } .api-key-result, .ssh-command { grid-template-columns:1fr; } }
+		@media (max-width:460px) { .endpoint-links { grid-template-columns:1fr; } }
 		@media (max-width:720px) { .settings-shell { width:min(100vw - 20px,760px); gap:16px; } .panel { padding:18px; } .page-head { flex-direction:column; } .settings-section button { width:100%; } .section-head { flex-direction:column; } .settings-section { padding:18px; } }
   </style>
 </head>
@@ -277,7 +301,15 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 							<a class="menu-link" href="/" role="menuitem">Dashboard</a>
 							<a class="menu-link menu-link--active" href="/settings" role="menuitem" aria-current="page">Settings</a>
 							<a class="menu-link" href="/diagnostics" role="menuitem">Diagnostics</a>
-							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem">Docs</a>
+							<button class="menu-link" type="button" data-about-open role="menuitem">About Strom</button>
+							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem" aria-label="Docs (opens in a new tab)">
+								<span class="menu-link-icon-wrap" aria-hidden="true">
+									<svg class="menu-link-icon" viewBox="0 0 24 24" focusable="false">
+										<path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+									</svg>
+								</span>
+								<span>Docs</span>
+							</a>
 							<div class="menu-divider" role="separator"></div>
 							<a class="menu-link menu-link--sign-out" href="/auth/logout" role="menuitem">Sign out</a>
 						</div>
@@ -289,7 +321,6 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 			<header class="page-head">
 				<div>
 					<h1>Settings</h1>
-					<p>Signed in as <strong>{{.Username}}</strong>.</p>
 				</div>
 			</header>
 			{{if .Message}}<div class="message">{{.Message}}</div>{{end}}
@@ -304,6 +335,31 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 						</div>
 					</div>
 					<button id="change-password-button" type="button">Change password</button>
+				</section>
+
+				<section class="settings-section">
+					<div class="section-head">
+						<div>
+							<h2>SSH access</h2>
+							<p>{{if .SSHEnabled}}Password access is enabled for the <strong>admin</strong> Linux account. It can use <code>sudo</code>.{{else}}Enable password access for the <strong>admin</strong> Linux account. The account can use <code>sudo</code>.{{end}}</p>
+						</div>
+						<span class="status">{{if .SSHEnabled}}Enabled{{else}}Disabled{{end}}</span>
+					</div>
+					{{if .SSHEnabled}}
+					<div class="ssh-command">
+						<pre><code id="ssh-command">{{.SSHCommand}}</code></pre>
+						<button id="copy-ssh-command" class="button--secondary" type="button">Copy</button>
+					</div>
+					{{end}}
+					<form id="ssh-setting-form" class="setting-switch-form" method="post" action="/settings/ssh">
+						<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+						<input id="ssh-enabled-value" type="hidden" name="enabled" value="{{if .SSHEnabled}}true{{else}}false{{end}}">
+						<label class="setting-switch" for="ssh-enabled-toggle">
+							<input id="ssh-enabled-toggle" type="checkbox" {{if .SSHEnabled}}checked{{end}}>
+							<span class="setting-switch-track" aria-hidden="true"></span>
+							<span>Allow password SSH access</span>
+						</label>
+					</form>
 				</section>
 
 				<section class="settings-section">
@@ -342,28 +398,35 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 				<section class="settings-section">
 					<div class="section-head">
 						<div>
-							<h2>Local UI</h2>
-					<p>{{if .UIManaged}}This setting is managed by the controller for adopted operation.{{else}}Controls whether this node serves its local dashboard.{{end}}</p>
+							<h2>Health endpoints</h2>
+							<p>Open the node health responses used for discovery, monitoring, and diagnostics.</p>
 						</div>
-						<span class="status">{{if .UIEnabled}}Enabled{{else}}Disabled{{end}}</span>
 					</div>
-					<form method="post" action="/settings/ui">
-				<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-						<input type="hidden" name="enabled" value="{{if .UIEnabled}}false{{else}}true{{end}}">
-				<button class="button--secondary" type="submit" {{if .UIManaged}}disabled{{end}}>{{if .UIEnabled}}Disable local UI{{else}}Enable local UI{{end}}</button>
-					</form>
+					<div class="endpoint-links">
+						<a class="link button--secondary endpoint-link" href="/status" target="_blank" rel="noreferrer">Public status</a>
+						<a class="link button--secondary endpoint-link" href="/status/details" target="_blank" rel="noreferrer">Detailed status</a>
+						<a class="link button--secondary endpoint-link" href="/healthz" target="_blank" rel="noreferrer">Health check</a>
+						<a class="link button--secondary endpoint-link" href="/api/health" target="_blank" rel="noreferrer">API health</a>
+					</div>
 				</section>
 
 				<section class="settings-section">
 					<div class="section-head">
 						<div>
-							<h2>Session</h2>
-							<p>End this local browser session.</p>
+							<h2>API documentation</h2>
+							<p>Enable the local Swagger UI to browse and send requests to the node API. It is disabled by default.</p>
 						</div>
+						<span class="status">{{if .APIDocsEnabled}}Enabled{{else}}Disabled{{end}}</span>
 					</div>
-					<form method="post" action="/auth/logout">
-				<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-						<button class="button--secondary" type="submit">Sign out</button>
+					{{if .APIDocsEnabled}}<p><a href="/api/docs" target="_blank" rel="noreferrer">Open API documentation</a></p>{{end}}
+					<form id="api-docs-setting-form" class="setting-switch-form" method="post" action="/settings/api-docs">
+						<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+						<input id="api-docs-enabled-value" type="hidden" name="enabled" value="{{if .APIDocsEnabled}}true{{else}}false{{end}}">
+						<label class="setting-switch" for="api-docs-enabled-toggle">
+							<input id="api-docs-enabled-toggle" type="checkbox" {{if .APIDocsEnabled}}checked{{end}} onchange="this.form.elements.enabled.value = this.checked; this.form.submit()">
+							<span class="setting-switch-track" aria-hidden="true"></span>
+							<span>Allow API documentation</span>
+						</label>
 					</form>
 				</section>
 
@@ -404,6 +467,26 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 				</form>
 			</div>
 		</dialog>
+		<dialog id="ssh-enable-dialog" class="password-dialog" aria-labelledby="ssh-enable-dialog-title">
+			<div class="password-dialog-content">
+				<div class="password-dialog-head">
+					<div>
+						<h2 id="ssh-enable-dialog-title">Enable SSH access</h2>
+						<p id="ssh-enable-password-help">Enter the current dashboard password. It sets the password for the Linux <strong>admin</strong> account before password SSH access is enabled.</p>
+					</div>
+				</div>
+				<form method="post" action="/settings/ssh">
+					<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+					<input type="hidden" name="enabled" value="true">
+					<label for="ssh-enable-password">Current dashboard password</label>
+					<input id="ssh-enable-password" name="password" type="password" autocomplete="current-password" aria-describedby="ssh-enable-password-help" required>
+					<div class="dialog-actions">
+						<button id="cancel-ssh-enable" class="button--secondary" type="button">Cancel</button>
+						<button type="submit">Enable SSH access</button>
+					</div>
+				</form>
+			</div>
+		</dialog>
 		<dialog id="api-key-dialog" class="password-dialog" aria-labelledby="api-key-dialog-title">
 			<div class="password-dialog-content">
 				<div class="password-dialog-head">
@@ -427,6 +510,20 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 				</form>
 			</div>
 		</dialog>
+		<dialog id="about-dialog" class="about-dialog" aria-labelledby="about-dialog-title">
+			<div class="about-dialog-content">
+				<div class="about-dialog-head"><div><span class="eyebrow">About</span><h2 id="about-dialog-title">Strom Node</h2></div><button class="button button--ghost" type="button" data-about-close>Close</button></div>
+				<div id="about-content" class="about-content"></div>
+			</div>
+		</dialog>
+		<dialog id="acknowledgements-dialog" class="about-dialog" aria-labelledby="acknowledgements-dialog-title">
+			<div class="about-dialog-content">
+				<div class="about-dialog-head"><div><span class="eyebrow">Open source</span><h2 id="acknowledgements-dialog-title">All acknowledgments</h2></div><button class="button button--ghost" type="button" data-acknowledgements-close>Close</button></div>
+				<div class="acknowledgements-controls"><input id="acknowledgements-search" type="search" placeholder="Search acknowledgments" aria-label="Search acknowledgments"><select id="acknowledgements-filter" aria-label="Acknowledgment category"><option value="all">All software</option><option value="go">Go modules</option><option value="debian">Debian packages</option></select></div>
+				<div id="acknowledgements-content" class="about-content"></div>
+				<div class="modal-actions"><button class="button button--ghost" type="button" data-acknowledgements-back>Back to About</button></div>
+			</div>
+		</dialog>
   </main>
 	<script>
 		(() => {
@@ -436,6 +533,11 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 			const menu = document.getElementById("settings-profile-menu");
 			const panel = document.getElementById("settings-menu-panel");
 			const passwordDialog = document.getElementById("password-dialog");
+			const sshEnableDialog = document.getElementById("ssh-enable-dialog");
+			const sshEnabledToggle = document.getElementById("ssh-enabled-toggle");
+			const sshEnabledValue = document.getElementById("ssh-enabled-value");
+			const sshSettingForm = document.getElementById("ssh-setting-form");
+			const cancelSSHEnable = document.getElementById("cancel-ssh-enable");
 			const changePasswordButton = document.getElementById("change-password-button");
 			const cancelPasswordChange = document.getElementById("cancel-password-change");
 			const apiKeyDialog = document.getElementById("api-key-dialog");
@@ -448,6 +550,8 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 			const apiKeyValue = document.getElementById("api-key-value");
 			const apiKeySubmit = document.getElementById("submit-api-key");
 			const apiKeyCopy = document.getElementById("copy-api-key");
+			const sshCommand = document.getElementById("ssh-command");
+			const copySSHCommand = document.getElementById("copy-ssh-command");
 			const cancelAPIKey = document.getElementById("cancel-api-key");
 			const csrfToken = {{printf "%q" .CSRFToken}};
 			let apiKeyOperation = null;
@@ -469,6 +573,18 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 			changePasswordButton.addEventListener("click", () => { passwordDialog.showModal(); document.getElementById("current_password").focus(); });
 			cancelPasswordChange.addEventListener("click", () => passwordDialog.close());
 			passwordDialog.addEventListener("click", (event) => { if (event.target === passwordDialog) passwordDialog.close(); });
+			sshEnabledToggle.addEventListener("change", () => {
+				if (sshEnabledToggle.checked) {
+					sshEnabledToggle.checked = false;
+					sshEnableDialog.showModal();
+					document.getElementById("ssh-enable-password").focus();
+					return;
+				}
+				sshEnabledValue.value = "false";
+				sshSettingForm.submit();
+			});
+			cancelSSHEnable.addEventListener("click", () => sshEnableDialog.close());
+			sshEnableDialog.addEventListener("click", (event) => { if (event.target === sshEnableDialog) sshEnableDialog.close(); });
 			const resetAPIKeyDialog = () => {
 				apiKeyForm.reset();
 				apiKeyError.hidden = true;
@@ -532,6 +648,22 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 				apiKeyCopy.textContent = "Copied";
 				setTimeout(() => { apiKeyCopy.textContent = "Copy"; }, 1500);
 			});
+			copySSHCommand?.addEventListener("click", async () => {
+				if (!sshCommand?.textContent) return;
+				try {
+					await navigator.clipboard.writeText(sshCommand.textContent);
+				} catch (_) {
+					const selection = getSelection();
+					const range = document.createRange();
+					range.selectNodeContents(sshCommand);
+					selection.removeAllRanges();
+					selection.addRange(range);
+					document.execCommand("copy");
+					selection.removeAllRanges();
+				}
+				copySSHCommand.textContent = "Copied";
+				setTimeout(() => { copySSHCommand.textContent = "Copy"; }, 1500);
+			});
 			document.addEventListener("click", (event) => {
 				if (menu.contains(event.target) || toggles.some((toggle) => toggle.contains(event.target))) return;
 				closeMenu();
@@ -539,6 +671,7 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 			document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(); });
 		})();
 	</script>
+	<script src="/assets/about.js" defer></script>
 </body>
 </html>`))
 
@@ -784,6 +917,60 @@ func (a *authManager) UIManaged() (bool, error) {
 		return false, err
 	}
 	return stored.isUIManaged(), nil
+}
+
+func (a *authManager) SSHEnabled() (bool, error) {
+	stored, err := a.load()
+	if err != nil {
+		return false, err
+	}
+	return stored.SSHEnabled != nil && *stored.SSHEnabled, nil
+}
+
+func (a *authManager) SetSSHEnabled(enabled bool, passwordHash string) error {
+	stored, err := a.load()
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	stored.SSHEnabled = &enabled
+	if enabled {
+		stored.SSHPasswordHash = passwordHash
+	} else {
+		stored.SSHPasswordHash = ""
+	}
+	return a.saveLocked(stored)
+}
+
+func (a *authManager) SetSSHPasswordHash(passwordHash string) error {
+	stored, err := a.load()
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	stored.SSHPasswordHash = passwordHash
+	return a.saveLocked(stored)
+}
+
+func (a *authManager) APIDocsEnabled() (bool, error) {
+	stored, err := a.load()
+	if err != nil {
+		return false, err
+	}
+	return stored.APIDocsEnabled != nil && *stored.APIDocsEnabled, nil
+}
+
+func (a *authManager) SetAPIDocsEnabled(enabled bool) error {
+	stored, err := a.load()
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	stored.APIDocsEnabled = &enabled
+	return a.saveLocked(stored)
 }
 
 func (a *authManager) ApplyControllerUIPolicy(managed, enabled bool) error {

@@ -91,6 +91,27 @@ func TestAdvertiserUpdatesTXTOnlyWhenCountChanges(t *testing.T) {
 	}
 }
 
+func TestAdvertiserRegistersLatestMetadataAfterDelayedStart(t *testing.T) {
+	t.Parallel()
+
+	announcement := &fakeAnnouncement{}
+	advertiser := &Advertiser{
+		meta: Metadata{Serial: "serial1234", Instance: "strom-node-1234", Version: "1.2.3", Port: 8080},
+		reg:  fakeRegistrar{announcement: announcement},
+	}
+
+	advertiser.UpdateUPSCount(2)
+	advertiser.UpdateAdopted(true)
+	if err := advertiser.Start(); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	want := [][]string{{"id=serial1234", "adopted=true", "ups_count=2", "version=1.2.3"}}
+	if !reflect.DeepEqual(announcement.texts, want) {
+		t.Fatalf("TXT records = %#v, want %#v", announcement.texts, want)
+	}
+}
+
 type fakeRegistrar struct {
 	announcement *fakeAnnouncement
 }

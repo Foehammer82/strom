@@ -36,8 +36,10 @@ const (
 	defaultAdoptionPath    = "/var/lib/strom/adoption.json"
 	defaultTLSCertPath     = "/var/lib/strom/node-api.crt"
 	defaultTLSKeyPath      = "/var/lib/strom/node-api.key"
+	defaultWebAuthPath     = "/var/lib/strom/webui-auth.json"
 	factoryResetMarkerPath = "/boot/firmware/strom-factory-reset"
 	factoryResetLegacyPath = "/boot/strom-factory-reset"
+	mdnsRetryInterval      = 5 * time.Second
 )
 
 var version = "dev"
@@ -125,6 +127,13 @@ func main() {
 		logger.Print("reset complete")
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "ssh-sync" {
+		if err := runSSHSyncCommand(logger, os.Args[2:]); err != nil {
+			logger.Printf("fatal error: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg, err := parseFlags(os.Args[1:])
 	if err != nil {
@@ -198,6 +207,23 @@ func parseResetFlags(args []string) (resetConfig, error) {
 		return resetConfig{}, err
 	}
 	return cfg, nil
+}
+
+func runSSHSyncCommand(logger *log.Logger, args []string) error {
+	flags := flag.NewFlagSet("strom-agent ssh-sync", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	authPath := defaultWebAuthPath
+	flags.StringVar(&authPath, "http-auth-file", authPath, "path to the node web auth file")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := api.SyncSSHAccess(context.Background(), authPath); err != nil {
+		return err
+	}
+	if logger != nil {
+		logger.Printf("synchronized SSH access state path=%s", authPath)
+	}
+	return nil
 }
 
 func resetNodeState(paths ...string) error {
@@ -299,10 +325,6 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 		Version:  version,
 		Port:     listener.Addr().(*net.TCPAddr).Port,
 	})
-	if err := advertiser.Start(); err != nil {
-		_ = listener.Close()
-		return err
-	}
 	defer advertiser.Close()
 
 	runtime := newAgentRuntime(cfg, logger)
@@ -314,6 +336,7 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 	adopter.Reloader = runtime.reloader
 
 	logger.Printf("node identity serial=%s instance=%s", identity.Serial, identity.Instance)
+	go retryMDNSRegistration(runCtx, logger, mdnsRetryInterval, advertiser.Start)
 
 	runtimeErr := make(chan error, 1)
 	go func() {
@@ -354,6 +377,29 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 	}
 
 	return result
+}
+
+func retryMDNSRegistration(ctx context.Context, logger *log.Logger, retryInterval time.Duration, start func() error) {
+	for {
+		if err := start(); err == nil {
+			return
+		} else if logger != nil {
+			logger.Printf("mDNS advertisement unavailable; retrying in %s: %v", retryInterval, err)
+		}
+
+		timer := time.NewTimer(retryInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		case <-timer.C:
+		}
+	}
 }
 
 func factoryResetStatePaths(authPath string) []string {
@@ -685,7 +731,7 @@ func (r *agentRuntime) run(ctx context.Context) error {
 }
 
 func (r *agentRuntime) apply(devices []nutconf.DetectedUPS) (appliedConfig, error) {
-	user, err := loadAgentUser(r.agentConfigPath)
+	user, err := loadRuntimeNUTUser(r.agentConfigPath, r.adoptionPath)
 	if err != nil {
 		return appliedConfig{}, err
 	}
@@ -748,6 +794,26 @@ func loadAgentUser(path string) (nutconf.UPSDUser, error) {
 	}
 
 	return nutconf.UPSDUser{Username: cfg.NUT.Username, Password: cfg.NUT.Password}, nil
+}
+
+func loadRuntimeNUTUser(agentConfigPath, adoptionPath string) (nutconf.UPSDUser, error) {
+	content, err := os.ReadFile(adoptionPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return loadAgentUser(agentConfigPath)
+	}
+	if err != nil {
+		return nutconf.UPSDUser{}, fmt.Errorf("read adoption config: %w", err)
+	}
+
+	var state adoptionState
+	if err := json.Unmarshal(content, &state); err != nil {
+		return nutconf.UPSDUser{}, fmt.Errorf("decode adoption config: %w", err)
+	}
+	if state.NUTUser == "" || state.NUTPassword == "" {
+		return nutconf.UPSDUser{}, errors.New("adoption config missing nut_user or nut_password")
+	}
+
+	return nutconf.UPSDUser{Username: state.NUTUser, Password: state.NUTPassword}, nil
 }
 
 func restartUnitsForUPSChange(upsChanged bool, devices []nutconf.DetectedUPS) []string {

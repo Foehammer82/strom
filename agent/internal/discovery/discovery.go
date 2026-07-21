@@ -109,11 +109,14 @@ func (a *Advertiser) UpdateUPSCount(count int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if !a.started || a.server == nil || count == a.upsCount {
+	if count == a.upsCount {
 		return
 	}
 
 	a.upsCount = count
+	if !a.started || a.server == nil {
+		return
+	}
 	a.server.SetText(txtRecords(a.meta, a.upsCount))
 	if a.logger != nil {
 		a.logger.Printf("mDNS advertisement updated instance=%s ups_count=%d", a.meta.Instance, a.upsCount)

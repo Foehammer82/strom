@@ -3,11 +3,13 @@ module github.com/Foehammer82/strom/agent
 go 1.26.0
 
 require (
+	github.com/fsnotify/fsnotify v1.8.0
 	github.com/grandcat/zeroconf v1.0.0
+	github.com/swaggest/swgui v1.8.9
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/fsnotify/fsnotify v1.8.0 // indirect
+require github.com/vearutop/statigz v1.4.0 // indirect
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect

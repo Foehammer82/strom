@@ -420,7 +420,6 @@ function renderHealth() {
   }
   const cards = [
     ["Version", state.health.version],
-    ["Serial", state.health.serial || "unknown"],
     ["Uptime", formatDuration(state.health.uptime_seconds)],
     ["Disk free", formatBytes(state.health.disk_free_bytes)],
     ["CPU temp", state.health.cpu_temperature_celsius == null ? "unavailable" : `${state.health.cpu_temperature_celsius.toFixed(1)} C`],

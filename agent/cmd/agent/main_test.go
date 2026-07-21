@@ -104,6 +104,150 @@ func TestRuntimeLoopWritesConfigsAndSkipsReloadWhenUnchanged(t *testing.T) {
 	}
 }
 
+func TestLoadRuntimeNUTUser(t *testing.T) {
+	t.Parallel()
+
+	stateDir := t.TempDir()
+	agentConfigPath := filepath.Join(stateDir, "agent.yaml")
+	adoptionPath := filepath.Join(stateDir, "adoption.json")
+	if err := os.WriteFile(agentConfigPath, []byte("nut:\n  username: agent\n  password: bootstrap-secret\n"), 0o600); err != nil {
+		t.Fatalf("write agent config: %v", err)
+	}
+
+	tests := []struct {
+		name          string
+		adoptionState string
+		wantUser      nutconf.UPSDUser
+		wantErr       string
+	}{
+		{
+			name:     "uses bootstrap credentials before adoption",
+			wantUser: nutconf.UPSDUser{Username: "agent", Password: "bootstrap-secret"},
+		},
+		{
+			name:          "uses controller credentials after adoption",
+			adoptionState: `{"nut_user":"controller","nut_password":"controller-secret"}`,
+			wantUser:      nutconf.UPSDUser{Username: "controller", Password: "controller-secret"},
+		},
+		{
+			name:          "rejects incomplete adoption state",
+			adoptionState: `{"nut_user":"controller"}`,
+			wantErr:       "adoption config missing nut_user or nut_password",
+		},
+		{
+			name:          "rejects malformed adoption state",
+			adoptionState: `{`,
+			wantErr:       "decode adoption config",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.adoptionState == "" {
+				if err := os.Remove(adoptionPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("remove adoption state: %v", err)
+				}
+			} else if err := os.WriteFile(adoptionPath, []byte(test.adoptionState), 0o600); err != nil {
+				t.Fatalf("write adoption state: %v", err)
+			}
+
+			got, err := loadRuntimeNUTUser(agentConfigPath, adoptionPath)
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("loadRuntimeNUTUser() error = %v, want %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadRuntimeNUTUser() error = %v", err)
+			}
+			if got != test.wantUser {
+				t.Fatalf("loadRuntimeNUTUser() = %#v, want %#v", got, test.wantUser)
+			}
+		})
+	}
+}
+
+func TestRuntimeApplyPreservesAdoptedNUTCredentials(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	stateDir := t.TempDir()
+	agentConfigPath := filepath.Join(stateDir, "agent.yaml")
+	adoptionPath := filepath.Join(stateDir, "adoption.json")
+	if err := os.WriteFile(agentConfigPath, []byte("nut:\n  username: agent\n  password: bootstrap-secret\n"), 0o600); err != nil {
+		t.Fatalf("write agent config: %v", err)
+	}
+	if err := os.WriteFile(adoptionPath, []byte(`{"nut_user":"controller","nut_password":"controller-secret"}`), 0o600); err != nil {
+		t.Fatalf("write adoption config: %v", err)
+	}
+
+	runtime := &agentRuntime{
+		configDir:       configDir,
+		agentConfigPath: agentConfigPath,
+		namesPath:       filepath.Join(stateDir, "names.json"),
+		adoptionPath:    adoptionPath,
+	}
+	if _, err := runtime.apply([]nutconf.DetectedUPS{sampleUPS()}); err != nil {
+		t.Fatalf("apply() error = %v", err)
+	}
+
+	assertFileContains(t, filepath.Join(configDir, "upsd.users"), "[controller]")
+	assertFileContains(t, filepath.Join(configDir, "upsd.users"), "password = controller-secret")
+	content, err := os.ReadFile(filepath.Join(configDir, "upsd.users"))
+	if err != nil {
+		t.Fatalf("read upsd.users: %v", err)
+	}
+	if strings.Contains(string(content), "bootstrap-secret") {
+		t.Fatalf("upsd.users unexpectedly contains bootstrap credentials: %q", content)
+	}
+}
+
+func TestRetryMDNSRegistrationRetriesUntilSuccessful(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	retryMDNSRegistration(context.Background(), nil, time.Millisecond, func() error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("network unavailable")
+		}
+		return nil
+	})
+
+	if attempts != 3 {
+		t.Fatalf("registration attempts = %d, want 3", attempts)
+	}
+}
+
+func TestRetryMDNSRegistrationStopsWhenCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	attempted := make(chan struct{}, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		retryMDNSRegistration(ctx, nil, time.Hour, func() error {
+			attempted <- struct{}{}
+			return errors.New("network unavailable")
+		})
+	}()
+
+	select {
+	case <-attempted:
+	case <-time.After(time.Second):
+		t.Fatal("registration was not attempted")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("registration retry did not stop after cancellation")
+	}
+}
+
 func TestRuntimeAdopterWritesStateAndReloadsServices(t *testing.T) {
 	t.Parallel()
 

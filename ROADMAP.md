@@ -320,7 +320,7 @@ discovered while doing that validation.
 - [ ] Plug in a real USB UPS and verify zero-config detection: generated
       `ups.conf`/`upsd.conf`/`upsd.users`, stable UPS naming across reboots,
       and `nut-server`/`nut-driver@` reload behavior
-- [ ] Verify mDNS discoverability (`avahi-browse _strom._tcp`) and
+- [x] Verify mDNS discoverability (`avahi-browse _strom._tcp`) and
       remote NUT access (`upsc <name>@<pi-ip>`) from another machine
 - [ ] Verify the node local HTTP surface on real hardware: auth bootstrap
       flow, `GET /status`, `GET /healthz`, and the dashboard UI

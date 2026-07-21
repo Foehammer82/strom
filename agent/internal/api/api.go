@@ -16,7 +16,9 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +31,7 @@ import (
 	"time"
 
 	"github.com/Foehammer82/strom/agent/internal/nutconf"
+	swguiV5 "github.com/swaggest/swgui/v5emb"
 )
 
 const (
@@ -68,6 +71,7 @@ type Options struct {
 	NUTUser      string
 	NUTPassword  string
 	Adopter      adoptionHandler
+	SSHAccess    sshAccessManager
 }
 
 type adoptionHandler interface {
@@ -91,6 +95,7 @@ type Service struct {
 	nutPassword  string
 	auth         *authManager
 	adopter      adoptionHandler
+	sshAccess    sshAccessManager
 
 	mu      sync.RWMutex
 	devices []nutconf.DetectedUPS
@@ -247,6 +252,42 @@ var webAssets embed.FS
 
 var assetFS = mustSubFS(webAssets, "web")
 
+var swaggerUIHandler = swguiV5.New("Strom Node API", "/openapi.json", "/api/docs/")
+
+var openAPISpecification = []byte(`{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "Strom Node API",
+		"version": "1.0.0",
+		"description": "Local Strom node status, diagnostics, and UPS-control API. Protected operations accept the current browser session or a node API key in the Authorization header."
+	},
+	"servers": [{"url": "/"}],
+	"paths": {
+		"/status": {"get": {"summary": "Public node summary", "responses": {"200": {"description": "Overall status and UPS count"}}}},
+		"/status/details": {"get": {"summary": "Detailed node health", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "responses": {"200": {"description": "Node and UPS telemetry"}}}},
+		"/healthz": {"get": {"summary": "Health check", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "responses": {"200": {"description": "Node and UPS telemetry"}}}},
+		"/api/health": {"get": {"summary": "Detailed API health", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "responses": {"200": {"description": "Node and UPS telemetry"}}}},
+		"/api/diagnostics": {"get": {"summary": "Node diagnostics", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "responses": {"200": {"description": "USB, scanner, NUT config, and NUT service diagnostics"}}}},
+		"/api/ups": {"get": {"summary": "List UPS status", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "responses": {"200": {"description": "UPS summaries"}}}},
+		"/api/ups/{name}": {
+			"get": {"summary": "Get UPS details", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "parameters": [{"name": "name", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "UPS metrics, variables, commands, and writable settings"}}}
+		},
+		"/api/ups/{name}/command": {
+			"post": {"summary": "Run a UPS command", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "parameters": [{"name": "name", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["cmd"], "properties": {"cmd": {"type": "string"}}}}}}, "responses": {"200": {"description": "Command result"}}}
+		},
+		"/api/ups/{name}/setvar": {
+			"post": {"summary": "Set a writable UPS variable", "security": [{"sessionCookie": []}, {"apiKeyAuth": []}], "parameters": [{"name": "name", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["var", "value"], "properties": {"var": {"type": "string"}, "value": {"type": "string"}}}}}}, "responses": {"200": {"description": "Updated variable result"}}}
+		},
+		"/api/about": {"get": {"summary": "Node software and platform details", "security": [{"sessionCookie": []}], "responses": {"200": {"description": "Node environment details"}}}}
+	},
+	"components": {
+		"securitySchemes": {
+			"sessionCookie": {"type": "apiKey", "in": "cookie", "name": "strom_session"},
+			"apiKeyAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "Strom API key"}
+		}
+	}
+}`)
+
 func mustSubFS(source fs.FS, dir string) fs.FS {
 	subtree, err := fs.Sub(source, dir)
 	if err != nil {
@@ -330,12 +371,11 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 							<a class="menu-link menu-link--active" href="/" role="menuitem" aria-current="page">Dashboard</a>
 							{{if .AuthEnabled}}<a class="menu-link" href="/settings" role="menuitem">Settings</a>{{end}}
 							{{if .AuthEnabled}}<a class="menu-link" href="/diagnostics" role="menuitem">Diagnostics</a>{{end}}
-							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem">
+							<button class="menu-link" type="button" data-about-open role="menuitem">About Strom</button>
+							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem" aria-label="Docs (opens in a new tab)">
 								<span class="menu-link-icon-wrap" aria-hidden="true">
 									<svg class="menu-link-icon" viewBox="0 0 24 24" focusable="false">
-										<path d="M20 3.5H8a3 3 0 0 0-3 3V18a2.5 2.5 0 0 1 2.5-2.5H20V3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
-										<path d="M7.5 15.5H20V20.5H7.5a2.5 2.5 0 0 1 0-5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
-										<path d="M9 8h7M9 11h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+										<path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
 									</svg>
 								</span>
 								<span>Docs</span>
@@ -353,7 +393,6 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 			</div>
 			<div id="metrics-grid" class="summary-grid">
 				<article class="metric-card"><span class="eyebrow">Version</span><div class="metric-value">{{.Health.Version}}</div></article>
-				<article class="metric-card"><span class="eyebrow">Serial</span><div class="metric-value">{{if .Health.Serial}}{{.Health.Serial}}{{else}}unknown{{end}}</div></article>
 				<article class="metric-card"><span class="eyebrow">Uptime</span><div class="metric-value">{{.Health.UptimeSeconds}}s</div></article>
 				<article class="metric-card"><span class="eyebrow">Disk free</span><div class="metric-value">{{.Health.DiskFreeBytes}} B</div></article>
 				<article class="metric-card"><span class="eyebrow">CPU temp</span><div class="metric-value">{{formatTemp .Health.CPUTemperatureCelsius}}</div></article>
@@ -394,6 +433,20 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 			</aside>
 		</section>
 	</main>
+	<dialog id="about-dialog" class="about-dialog" aria-labelledby="about-dialog-title">
+		<div class="about-dialog-content">
+			<div class="about-dialog-head"><div><span class="eyebrow">About</span><h2 id="about-dialog-title">Strom Node</h2></div><button class="button button--ghost" type="button" data-about-close>Close</button></div>
+			<div id="about-content" class="about-content"></div>
+		</div>
+	</dialog>
+	<dialog id="acknowledgements-dialog" class="about-dialog" aria-labelledby="acknowledgements-dialog-title">
+		<div class="about-dialog-content">
+			<div class="about-dialog-head"><div><span class="eyebrow">Open source</span><h2 id="acknowledgements-dialog-title">All acknowledgments</h2></div><button class="button button--ghost" type="button" data-acknowledgements-close>Close</button></div>
+			<div class="acknowledgements-controls"><input id="acknowledgements-search" type="search" placeholder="Search acknowledgments" aria-label="Search acknowledgments"><select id="acknowledgements-filter" aria-label="Acknowledgment category"><option value="all">All software</option><option value="go">Go modules</option><option value="debian">Debian packages</option></select></div>
+			<div id="acknowledgements-content" class="about-content"></div>
+			<div class="modal-actions"><button class="button button--ghost" type="button" data-acknowledgements-back>Back to About</button></div>
+		</div>
+	</dialog>
 
 	<div id="toast" class="toast" role="status" aria-live="polite"></div>
 	<div id="confirm-modal" class="modal" aria-hidden="true">
@@ -419,6 +472,7 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 		</div>
 	</div>
 	<script src="/assets/app.js" defer></script>
+	<script src="/assets/about.js" defer></script>
 </body>
 </html>`))
 
@@ -451,7 +505,15 @@ var diagnosticsTemplate = template.Must(template.New("diagnostics").Parse(`<!DOC
 							<a class="menu-link" href="/" role="menuitem">Dashboard</a>
 							<a class="menu-link" href="/settings" role="menuitem">Settings</a>
 							<a class="menu-link menu-link--active" href="/diagnostics" role="menuitem" aria-current="page">Diagnostics</a>
-							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem">Docs</a>
+							<button class="menu-link" type="button" data-about-open role="menuitem">About Strom</button>
+							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem" aria-label="Docs (opens in a new tab)">
+								<span class="menu-link-icon-wrap" aria-hidden="true">
+									<svg class="menu-link-icon" viewBox="0 0 24 24" focusable="false">
+										<path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+									</svg>
+								</span>
+								<span>Docs</span>
+							</a>
 							<div class="menu-divider" role="separator"></div>
 							<a class="menu-link menu-link--sign-out" href="/auth/logout" role="menuitem">Sign out</a>
 						</div>
@@ -469,6 +531,20 @@ var diagnosticsTemplate = template.Must(template.New("diagnostics").Parse(`<!DOC
 			</div>
 		</section>
 	</main>
+	<dialog id="about-dialog" class="about-dialog" aria-labelledby="about-dialog-title">
+		<div class="about-dialog-content">
+			<div class="about-dialog-head"><div><span class="eyebrow">About</span><h2 id="about-dialog-title">Strom Node</h2></div><button class="button button--ghost" type="button" data-about-close>Close</button></div>
+			<div id="about-content" class="about-content"></div>
+		</div>
+	</dialog>
+	<dialog id="acknowledgements-dialog" class="about-dialog" aria-labelledby="acknowledgements-dialog-title">
+		<div class="about-dialog-content">
+			<div class="about-dialog-head"><div><span class="eyebrow">Open source</span><h2 id="acknowledgements-dialog-title">All acknowledgments</h2></div><button class="button button--ghost" type="button" data-acknowledgements-close>Close</button></div>
+			<div class="acknowledgements-controls"><input id="acknowledgements-search" type="search" placeholder="Search acknowledgments" aria-label="Search acknowledgments"><select id="acknowledgements-filter" aria-label="Acknowledgment category"><option value="all">All software</option><option value="go">Go modules</option><option value="debian">Debian packages</option></select></div>
+			<div id="acknowledgements-content" class="about-content"></div>
+			<div class="modal-actions"><button class="button button--ghost" type="button" data-acknowledgements-back>Back to About</button></div>
+		</div>
+	</dialog>
 	<script>
 		(() => {
 			const toolbar = document.getElementById("diagnostics-toolbar");
@@ -477,11 +553,12 @@ var diagnosticsTemplate = template.Must(template.New("diagnostics").Parse(`<!DOC
 			const toggles = [document.getElementById("diagnostics-menu-toggle")];
 			const closeMenu = () => { panel.hidden = true; toolbar.classList.remove("is-open"); toggles.forEach((toggle) => toggle.setAttribute("aria-expanded", "false")); };
 			const toggleMenu = () => { const open = panel.hidden; panel.hidden = !open; toolbar.classList.toggle("is-open", open); toggles.forEach((toggle) => toggle.setAttribute("aria-expanded", String(open))); };
-			toggles.forEach((toggle) => toggle.addEventListener("click", toggleMenu));
+			toggles.forEach((toggle) => toggle.addEventListener("click", (event) => { event.stopPropagation(); toggleMenu(); }));
 			document.addEventListener("click", (event) => { if (!menu.contains(event.target)) closeMenu(); });
 			document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(); });
 		})();
 	</script>
+	<script src="/assets/about.js" defer></script>
 </body>
 </html>`))
 
@@ -538,6 +615,10 @@ func New(logger *log.Logger, opts Options) *Service {
 		nutPassword:  opts.NUTPassword,
 		auth:         newAuthManager(opts.DisableAuth, opts.AuthPath, logger),
 		adopter:      opts.Adopter,
+		sshAccess:    opts.SSHAccess,
+	}
+	if service.sshAccess == nil {
+		service.sshAccess = newSystemSSHAccessManager(rootPath)
 	}
 	service.cache = service.loggingMiddleware(service.routes())
 	return service
@@ -575,6 +656,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("/auth/login", s.handleLogin)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 	mux.HandleFunc("/auth/reset", s.handleReset)
+	mux.HandleFunc("/api/about", s.handleAPIAbout)
 	mux.HandleFunc("/api/health", s.handleAPIHealth)
 	mux.HandleFunc("/api/diagnostics", s.handleAPIDiagnostics)
 	mux.HandleFunc("/api/ups", s.handleAPIUPS)
@@ -583,9 +665,14 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/ui", s.handleUISetting)
 	mux.HandleFunc("/settings/password", s.handleChangePassword)
+	mux.HandleFunc("/settings/ssh", s.handleSSHSetting)
 	mux.HandleFunc("/settings/api-key", s.handleAPIKeySetting)
+	mux.HandleFunc("/settings/api-docs", s.handleAPIDocsSetting)
 	mux.HandleFunc("/api/settings/ui/policy", s.handleUIPolicy)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
+	mux.HandleFunc("/api/docs", s.handleAPIDocsRedirect)
+	mux.HandleFunc("/api/docs/", s.handleAPIDocs)
+	mux.HandleFunc("/openapi.json", s.handleOpenAPISpecification)
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/status/details", s.handleStatusDetails)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -887,6 +974,17 @@ func (s *Service) handleReset(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r); !ok {
 		return
 	}
+	sshEnabled, err := s.auth.SSHEnabled()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if sshEnabled {
+		if err := s.sshAccess.Disable(r.Context()); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	if err := s.auth.Reset(); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -934,6 +1032,10 @@ func (s *Service) buildSettingsViewModel(r *http.Request, username, message, err
 	if err != nil {
 		return settingsViewModel{}, err
 	}
+	sshEnabled, err := s.auth.SSHEnabled()
+	if err != nil {
+		return settingsViewModel{}, err
+	}
 	csrfToken, err := s.auth.SessionCSRFToken(r)
 	if err != nil {
 		return settingsViewModel{}, err
@@ -946,16 +1048,37 @@ func (s *Service) buildSettingsViewModel(r *http.Request, username, message, err
 	if err != nil {
 		return settingsViewModel{}, err
 	}
+	apiDocsEnabled, err := s.auth.APIDocsEnabled()
+	if err != nil {
+		return settingsViewModel{}, err
+	}
 	return settingsViewModel{
 		Username:          username,
 		UIEnabled:         uiEnabled,
 		UIManaged:         uiManaged,
+		SSHEnabled:        sshEnabled,
+		SSHCommand:        sshCommandForRequest(r),
 		ReadAPIKeyExists:  readAPIKeyExists,
 		WriteAPIKeyExists: writeAPIKeyExists,
+		APIDocsEnabled:    apiDocsEnabled,
 		Message:           message,
 		Error:             errMessage,
 		CSRFToken:         csrfToken,
 	}, nil
+}
+
+func sshCommandForRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host := strings.TrimSpace(r.Host)
+	if hostname, _, err := net.SplitHostPort(host); err == nil {
+		host = hostname
+	}
+	if host == "" || strings.ContainsAny(host, "\r\n\t ") {
+		return ""
+	}
+	return "ssh " + defaultAdminUsername + "@" + host
 }
 
 func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -983,6 +1106,22 @@ func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		s.respondSettingsError(w, r, username, http.StatusBadRequest, "new passwords do not match")
 		return
 	}
+	sshEnabled, err := s.auth.SSHEnabled()
+	if err != nil {
+		s.respondSettingsError(w, r, username, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if sshEnabled {
+		passwordHash, err := s.sshAccess.SyncPassword(r.Context(), req.NewPassword)
+		if err != nil {
+			s.respondSettingsError(w, r, username, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := s.auth.SetSSHPasswordHash(passwordHash); err != nil {
+			s.respondSettingsError(w, r, username, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	if err := s.auth.ChangePassword(req.CurrentPassword, req.NewPassword); err != nil {
 		status := http.StatusBadRequest
 		message := err.Error()
@@ -998,6 +1137,58 @@ func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password-updated"})
+}
+
+func (s *Service) handleSSHSetting(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
+	username, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	request, err := sshSettingRequestFromRequest(r)
+	if err != nil {
+		s.respondSettingsError(w, r, username, http.StatusBadRequest, err.Error())
+		return
+	}
+	if request.Enabled {
+		if err := s.auth.Authenticate(username, request.Password); err != nil {
+			s.respondSettingsError(w, r, username, http.StatusUnauthorized, "current password is incorrect")
+			return
+		}
+		var passwordHash string
+		passwordHash, err = s.sshAccess.Enable(r.Context(), request.Password)
+		if err == nil {
+			err = s.auth.SetSSHEnabled(true, passwordHash)
+		}
+	} else {
+		err = s.sshAccess.Disable(r.Context())
+		if err == nil {
+			err = s.auth.SetSSHEnabled(false, "")
+		}
+	}
+	if err != nil {
+		s.respondSettingsError(w, r, username, http.StatusInternalServerError, err.Error())
+		return
+	}
+	message := "ssh-access-disabled"
+	if request.Enabled {
+		message = "ssh-access-enabled"
+	}
+	if wantsHTML(r) {
+		http.Redirect(w, r, "/settings?message="+message, http.StatusSeeOther)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "updated", "ssh_enabled": request.Enabled})
 }
 
 func (s *Service) handleAPIKeySetting(w http.ResponseWriter, r *http.Request) {
@@ -1053,6 +1244,41 @@ func (s *Service) handleAPIKeySetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"scope": request.Scope, "key": key})
+}
+
+func (s *Service) handleAPIDocsSetting(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	enabled, err := enabledFlagFromRequest(r)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.auth.SetAPIDocsEnabled(enabled); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if wantsHTML(r) {
+		message := "API documentation disabled"
+		if enabled {
+			message = "API documentation enabled"
+		}
+		http.Redirect(w, r, "/settings?message="+url.QueryEscape(message), http.StatusSeeOther)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "updated", "api_docs_enabled": enabled})
 }
 
 // respondSettingsError re-renders the settings page with an error message
@@ -1323,6 +1549,73 @@ func (s *Service) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Service) apiDocsEnabled(w http.ResponseWriter, r *http.Request) bool {
+	enabled, err := s.auth.APIDocsEnabled()
+	if err != nil || !enabled {
+		http.NotFound(w, r)
+		return false
+	}
+	return true
+}
+
+func (s *Service) handleAPIDocsRedirect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.apiDocsEnabled(w, r) {
+		return
+	}
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	http.Redirect(w, r, "/api/docs/", http.StatusTemporaryRedirect)
+}
+
+func (s *Service) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.apiDocsEnabled(w, r) {
+		return
+	}
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	swaggerUIHandler.ServeHTTP(w, r)
+}
+
+func (s *Service) handleOpenAPISpecification(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.apiDocsEnabled(w, r) {
+		return
+	}
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(openAPISpecification)
+}
+
+func (s *Service) handleAPIAbout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.buildAboutResponse())
 }
 
 func (s *Service) handleAPIDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -2425,6 +2718,22 @@ func enabledFlagFromRequest(r *http.Request) (bool, error) {
 	default:
 		return false, errors.New("enabled must be true or false")
 	}
+}
+
+func sshSettingRequestFromRequest(r *http.Request) (sshSettingRequest, error) {
+	contentType := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.HasPrefix(contentType, "application/json") {
+		var request sshSettingRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			return sshSettingRequest{}, fmt.Errorf("decode SSH setting request: %w", err)
+		}
+		return request, nil
+	}
+	enabled, err := enabledFlagFromRequest(r)
+	if err != nil {
+		return sshSettingRequest{}, err
+	}
+	return sshSettingRequest{Enabled: enabled, Password: r.FormValue("password")}, nil
 }
 
 func changePasswordRequestFromRequest(r *http.Request) (changePasswordRequest, error) {

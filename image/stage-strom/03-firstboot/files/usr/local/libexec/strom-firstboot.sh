@@ -10,6 +10,21 @@ fi
 
 install -d -m 0755 "$state_dir"
 
+if [ ! -f /etc/strom/agent.yaml ]; then
+	install -d -m 0700 /etc/strom
+	nut_password=$(od -An -N 32 -tx1 /dev/urandom | tr -d ' \n')
+	if [ -z "$nut_password" ]; then
+		echo "failed to generate NUT bootstrap password" >&2
+		exit 1
+	fi
+	{
+		printf '%s\n' 'nut:'
+		printf '%s\n' '  username: agent'
+		printf '%s\n' "  password: $nut_password"
+	} >/etc/strom/agent.yaml
+	chmod 0600 /etc/strom/agent.yaml
+fi
+
 serial=''
 if [ -r /sys/firmware/devicetree/base/serial-number ]; then
 	serial=$(tr -d '\000' < /sys/firmware/devicetree/base/serial-number || true)

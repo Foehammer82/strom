@@ -1,0 +1,13 @@
+[Unit]
+Description=Restore Strom SSH access
+RequiresMountsFor=/var/lib/strom
+After=local-fs.target
+Before=ssh.service
+Wants=ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/strom-agent ssh-sync
+
+[Install]
+WantedBy=multi-user.target

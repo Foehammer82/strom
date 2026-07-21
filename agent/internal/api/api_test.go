@@ -104,6 +104,81 @@ func TestHealthzRejectsUnsupportedMethods(t *testing.T) {
 	}
 }
 
+func TestAPIAboutReturnsNodeAndInstalledSoftwareDetails(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	writeAboutFixture(t, tempDir, "etc/os-release", "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nVERSION_ID=\"13\"\n")
+	writeAboutFixture(t, tempDir, "proc/sys/kernel/osrelease", "6.12.0-v8+\n")
+	writeAboutFixture(t, tempDir, "var/lib/dpkg/status", "Package: systemd\nStatus: install ok installed\nVersion: 257.7-1\nArchitecture: arm64\n\nPackage: nut-server\nStatus: install ok installed\nVersion: 2.8.3-1\nArchitecture: arm64\n\nPackage: ignored\nStatus: deinstall ok config-files\nVersion: 1.0\n\n")
+
+	service := New(nil, Options{
+		Version:     "1.2.3",
+		Serial:      "serial-1",
+		StartedAt:   time.Now().Add(-2 * time.Minute),
+		RootPath:    tempDir,
+		DisableAuth: true,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/about", nil)
+	recorder := httptest.NewRecorder()
+
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var response aboutResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Version != "1.2.3" || response.Serial != "serial-1" {
+		t.Fatalf("identity = %#v, want version and serial", response)
+	}
+	if response.OperatingSystem.Name != "Debian GNU/Linux 13 (trixie)" || response.Kernel != "6.12.0-v8+" {
+		t.Fatalf("host information = %#v, want fixture values", response)
+	}
+	if len(response.DebianPackages) != 2 || response.DebianPackages[0].Name != "nut-server" || response.DebianPackages[1].Name != "systemd" {
+		t.Fatalf("DebianPackages = %#v, want installed packages sorted by name", response.DebianPackages)
+	}
+	if len(response.Featured) < 2 {
+		t.Fatalf("Featured = %#v, want runtime acknowledgments", response.Featured)
+	}
+}
+
+func TestAPIAboutRequiresLocalSession(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	service := New(nil, Options{RootPath: tempDir, AuthPath: filepath.Join(tempDir, "webui-auth.json")})
+
+	unauthenticated := httptest.NewRequest(http.MethodGet, "/api/about", nil)
+	unauthenticatedRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(unauthenticatedRecorder, unauthenticated)
+	if unauthenticatedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want %d", unauthenticatedRecorder.Code, http.StatusUnauthorized)
+	}
+
+	cookies := loginAsDefaultAdmin(t, service)
+	authenticated := httptest.NewRequest(http.MethodGet, "/api/about", nil)
+	authenticated.AddCookie(cookieByName(cookies, sessionCookieName))
+	authenticatedRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(authenticatedRecorder, authenticated)
+	if authenticatedRecorder.Code != http.StatusOK {
+		t.Fatalf("authenticated status = %d, want %d body=%s", authenticatedRecorder.Code, http.StatusOK, authenticatedRecorder.Body.String())
+	}
+}
+
+func writeAboutFixture(t *testing.T, rootPath, relativePath, content string) {
+	t.Helper()
+	path := filepath.Join(rootPath, relativePath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create fixture directory: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write fixture %s: %v", relativePath, err)
+	}
+}
+
 func TestAPIDiagnosticsReturnsUSBAndNUTChecks(t *testing.T) {
 	t.Parallel()
 
@@ -168,7 +243,19 @@ func TestDiagnosticsPageIncludesResponsiveNavigation(t *testing.T) {
 		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	for _, want := range []string{"diagnostics-menu-toggle", "diagnostics-profile-menu", "strom-theme-preference"} {
+	for _, want := range []string{
+		"diagnostics-menu-toggle",
+		"diagnostics-profile-menu",
+		"strom-theme-preference",
+		"data-about-open",
+		"about-dialog",
+		"acknowledgements-dialog",
+		"/assets/about.js",
+		"aria-label=\"Docs (opens in a new tab)\"",
+		"menu-link-icon-wrap",
+		"M14 5h5v5M19 5l-9 9M19 14v5H5V5h5",
+		"event.stopPropagation(); toggleMenu();",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("diagnostics page missing %q: %s", want, body)
 		}
@@ -290,7 +377,22 @@ func TestIndexRendersHTMLDashboard(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
 	}
 	body := recorder.Body.String()
-	for _, want := range []string{"Strom Node", "Refresh", "/assets/app.js", "/assets/styles.css", "ups-a", "usbhid-ups", "OL"} {
+	for _, want := range []string{
+		"Strom Node",
+		"Refresh",
+		"/assets/app.js",
+		"/assets/about.js",
+		"/assets/styles.css",
+		"data-about-open",
+		"about-dialog",
+		"acknowledgements-dialog",
+		"ups-a",
+		"usbhid-ups",
+		"OL",
+		"aria-label=\"Docs (opens in a new tab)\"",
+		"menu-link-icon-wrap",
+		"M14 5h5v5M19 5l-9 9M19 14v5H5V5h5",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
@@ -1003,14 +1105,40 @@ func TestSettingsCanToggleLocalUIAndResetAuth(t *testing.T) {
 	if !strings.Contains(settingsRecorder.Body.String(), "strom-theme-preference") {
 		t.Fatalf("settings page missing persisted theme bootstrap: %s", settingsRecorder.Body.String())
 	}
-	if !strings.Contains(settingsRecorder.Body.String(), "class=\"status\">Enabled") {
-		t.Fatalf("settings page missing local UI status indicator: %s", settingsRecorder.Body.String())
+	for _, removed := range []string{"<h2>Local UI</h2>", "<h2>Session</h2>", "Signed in as", "action=\"/settings/ui\"", "action=\"/auth/logout\""} {
+		if strings.Contains(settingsRecorder.Body.String(), removed) {
+			t.Fatalf("settings page still contains removed section markup %q: %s", removed, settingsRecorder.Body.String())
+		}
+	}
+	if !strings.Contains(settingsRecorder.Body.String(), "SSH access") {
+		t.Fatalf("settings page missing SSH access controls: %s", settingsRecorder.Body.String())
+	}
+	for _, want := range []string{"Health endpoints", "href=\"/status\"", "href=\"/status/details\"", "href=\"/healthz\"", "href=\"/api/health\"", "API documentation", "action=\"/settings/api-docs\"", "api-docs-enabled-toggle", "ssh-enabled-toggle", "ssh-enable-dialog", "Current dashboard password"} {
+		if !strings.Contains(settingsRecorder.Body.String(), want) {
+			t.Fatalf("settings page missing API endpoint or documentation markup %q: %s", want, settingsRecorder.Body.String())
+		}
+	}
+	if strings.Contains(settingsRecorder.Body.String(), "Open API documentation") {
+		t.Fatalf("settings page should not link to disabled API documentation: %s", settingsRecorder.Body.String())
 	}
 	if !strings.Contains(settingsRecorder.Body.String(), "Reset local web access?") {
 		t.Fatalf("settings page missing reset confirmation: %s", settingsRecorder.Body.String())
 	}
 	if !strings.Contains(settingsRecorder.Body.String(), "settings-menu-toggle") {
 		t.Fatalf("settings page missing responsive menu toggle: %s", settingsRecorder.Body.String())
+	}
+	for _, want := range []string{
+		"data-about-open",
+		"about-dialog",
+		"acknowledgements-dialog",
+		"/assets/about.js",
+		"aria-label=\"Docs (opens in a new tab)\"",
+		"menu-link-icon-wrap",
+		"M14 5h5v5M19 5l-9 9M19 14v5H5V5h5",
+	} {
+		if !strings.Contains(settingsRecorder.Body.String(), want) {
+			t.Fatalf("settings page missing Docs external-link markup %q: %s", want, settingsRecorder.Body.String())
+		}
 	}
 
 	disable := httptest.NewRequest(http.MethodPost, "/settings/ui", strings.NewReader(`{"enabled":false}`))
@@ -1058,6 +1186,158 @@ func TestSettingsCanToggleLocalUIAndResetAuth(t *testing.T) {
 	}
 }
 
+func TestAPIDocumentationIsOptInAndSessionProtected(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	service := New(nil, Options{RootPath: tempDir, AuthPath: filepath.Join(tempDir, "webui-auth.json")})
+	cookies := loginAsDefaultAdmin(t, service)
+	sessionCookie := cookieByName(cookies, sessionCookieName)
+	if sessionCookie == nil {
+		t.Fatal("expected admin session cookie")
+	}
+
+	for _, path := range []string{"/api/docs/", "/openapi.json"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		recorder := httptest.NewRecorder()
+		service.Handler().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("disabled API documentation %s status = %d, want %d", path, recorder.Code, http.StatusNotFound)
+		}
+	}
+
+	enable := httptest.NewRequest(http.MethodPost, "/settings/api-docs", strings.NewReader(`{"enabled":true}`))
+	enable.Header.Set("Content-Type", "application/json")
+	enable.AddCookie(sessionCookie)
+	enableRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(enableRecorder, enable)
+	if enableRecorder.Code != http.StatusOK {
+		t.Fatalf("enable API documentation status = %d, want %d body=%s", enableRecorder.Code, http.StatusOK, enableRecorder.Body.String())
+	}
+
+	unauthenticated := httptest.NewRequest(http.MethodGet, "/api/docs/", nil)
+	unauthenticatedRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(unauthenticatedRecorder, unauthenticated)
+	if unauthenticatedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated API documentation status = %d, want %d", unauthenticatedRecorder.Code, http.StatusUnauthorized)
+	}
+
+	for _, path := range []string{"/api/docs/", "/openapi.json"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.AddCookie(sessionCookie)
+		recorder := httptest.NewRecorder()
+		service.Handler().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("enabled API documentation %s status = %d, want %d body=%s", path, recorder.Code, http.StatusOK, recorder.Body.String())
+		}
+	}
+}
+
+func TestSettingsSynchronizesSSHAccessWithAdminCredentials(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	sshAccess := &fakeSSHAccessManager{}
+	service := New(nil, Options{
+		RootPath:  tempDir,
+		AuthPath:  filepath.Join(tempDir, "webui-auth.json"),
+		SSHAccess: sshAccess,
+	})
+	cookies := loginAsDefaultAdmin(t, service)
+	sessionCookie := cookieByName(cookies, sessionCookieName)
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie")
+	}
+
+	enable := httptest.NewRequest(http.MethodPost, "/settings/ssh", strings.NewReader(`{"enabled":true,"password":"`+testAdminPassword+`"}`))
+	enable.Header.Set("Content-Type", "application/json")
+	enable.AddCookie(sessionCookie)
+	enableRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(enableRecorder, enable)
+	if enableRecorder.Code != http.StatusOK {
+		t.Fatalf("enable SSH status = %d, want %d body=%s", enableRecorder.Code, http.StatusOK, enableRecorder.Body.String())
+	}
+	if sshAccess.enabledPassword != testAdminPassword {
+		t.Fatalf("SSH enable password = %q, want %q", sshAccess.enabledPassword, testAdminPassword)
+	}
+	if sshAccess.enabledPasswordHash == "" {
+		t.Fatal("expected SSH enable to return a persistent password hash")
+	}
+	sshEnabled, err := service.auth.SSHEnabled()
+	if err != nil || !sshEnabled {
+		t.Fatalf("SSH enabled = %t, %v; want true, nil", sshEnabled, err)
+	}
+	settings := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	settings.Host = "192.168.20.63:80"
+	settings.AddCookie(sessionCookie)
+	settingsRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(settingsRecorder, settings)
+	if settingsRecorder.Code != http.StatusOK {
+		t.Fatalf("settings status = %d, want %d body=%s", settingsRecorder.Code, http.StatusOK, settingsRecorder.Body.String())
+	}
+	if !strings.Contains(settingsRecorder.Body.String(), `<code id="ssh-command">ssh admin@192.168.20.63</code>`) {
+		t.Fatalf("settings page missing copyable SSH command: %s", settingsRecorder.Body.String())
+	}
+
+	const updatedPassword = "another-strong-pass"
+	change := httptest.NewRequest(http.MethodPost, "/settings/password", strings.NewReader(`{"current_password":"`+testAdminPassword+`","new_password":"`+updatedPassword+`","confirm_password":"`+updatedPassword+`"}`))
+	change.Header.Set("Content-Type", "application/json")
+	change.AddCookie(sessionCookie)
+	changeRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(changeRecorder, change)
+	if changeRecorder.Code != http.StatusOK {
+		t.Fatalf("change password status = %d, want %d body=%s", changeRecorder.Code, http.StatusOK, changeRecorder.Body.String())
+	}
+	if sshAccess.syncedPassword != updatedPassword {
+		t.Fatalf("SSH synced password = %q, want %q", sshAccess.syncedPassword, updatedPassword)
+	}
+
+	disable := httptest.NewRequest(http.MethodPost, "/settings/ssh", strings.NewReader(`{"enabled":false}`))
+	disable.Header.Set("Content-Type", "application/json")
+	disable.AddCookie(sessionCookie)
+	disableRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(disableRecorder, disable)
+	if disableRecorder.Code != http.StatusOK {
+		t.Fatalf("disable SSH status = %d, want %d body=%s", disableRecorder.Code, http.StatusOK, disableRecorder.Body.String())
+	}
+	sshEnabled, err = service.auth.SSHEnabled()
+	if err != nil || sshEnabled {
+		t.Fatalf("SSH enabled after disable = %t, %v; want false, nil", sshEnabled, err)
+	}
+	if sshAccess.disableCalls != 1 {
+		t.Fatalf("SSH disable calls after toggle = %d, want 1", sshAccess.disableCalls)
+	}
+
+	reset := httptest.NewRequest(http.MethodPost, "/auth/reset", nil)
+	reset.AddCookie(sessionCookie)
+	resetRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(resetRecorder, reset)
+	if resetRecorder.Code != http.StatusOK {
+		t.Fatalf("reset status = %d, want %d body=%s", resetRecorder.Code, http.StatusOK, resetRecorder.Body.String())
+	}
+	if sshAccess.disableCalls != 1 {
+		t.Fatalf("SSH disable calls = %d, want 1", sshAccess.disableCalls)
+	}
+}
+
+func TestSystemSSHAccessManagerWritesPasswordAuthConfig(t *testing.T) {
+	t.Parallel()
+
+	rootPath := t.TempDir()
+	manager := newSystemSSHAccessManager(rootPath)
+	if err := manager.writeConfig(); err != nil {
+		t.Fatalf("writeConfig() error = %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(rootPath, sshAccessConfigPath))
+	if err != nil {
+		t.Fatalf("read SSH config: %v", err)
+	}
+	if !strings.Contains(string(content), "Match User admin\n    PasswordAuthentication yes") {
+		t.Fatalf("SSH config = %q, want password access restricted to admin", content)
+	}
+}
+
 func TestSettingsHTMLFormRequiresCSRFTokens(t *testing.T) {
 	t.Parallel()
 
@@ -1089,6 +1369,29 @@ func TestSettingsHTMLFormRequiresCSRFTokens(t *testing.T) {
 	service.Handler().ServeHTTP(withTokenRecorder, withToken)
 	if withTokenRecorder.Code != http.StatusSeeOther {
 		t.Fatalf("settings form with csrf status = %d, want %d body=%s", withTokenRecorder.Code, http.StatusSeeOther, withTokenRecorder.Body.String())
+	}
+
+	missingDocsToken := httptest.NewRequest(http.MethodPost, "/settings/api-docs", strings.NewReader("enabled=true"))
+	missingDocsToken.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	missingDocsToken.Header.Set("Accept", "text/html")
+	missingDocsToken.AddCookie(sessionCookie)
+	missingDocsTokenRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(missingDocsTokenRecorder, missingDocsToken)
+	if missingDocsTokenRecorder.Code != http.StatusForbidden {
+		t.Fatalf("API documentation form without csrf status = %d, want %d body=%s", missingDocsTokenRecorder.Code, http.StatusForbidden, missingDocsTokenRecorder.Body.String())
+	}
+
+	withDocsToken := httptest.NewRequest(http.MethodPost, "/settings/api-docs", strings.NewReader("enabled=true&csrf_token="+csrfCookie.Value))
+	withDocsToken.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	withDocsToken.Header.Set("Accept", "text/html")
+	withDocsToken.AddCookie(sessionCookie)
+	withDocsTokenRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(withDocsTokenRecorder, withDocsToken)
+	if withDocsTokenRecorder.Code != http.StatusSeeOther {
+		t.Fatalf("API documentation form with csrf status = %d, want %d body=%s", withDocsTokenRecorder.Code, http.StatusSeeOther, withDocsTokenRecorder.Body.String())
+	}
+	if location := withDocsTokenRecorder.Header().Get("Location"); location != "/settings?message=API+documentation+enabled" {
+		t.Fatalf("API documentation form redirect = %q, want readable enabled message", location)
 	}
 }
 
@@ -1125,15 +1428,15 @@ func TestControllerPolicyCanManageLocalUIAndBlockSessionToggle(t *testing.T) {
 		t.Fatalf("local toggle status = %d, want %d body=%s", localToggleRecorder.Code, http.StatusConflict, localToggleRecorder.Body.String())
 	}
 
-	settings := httptest.NewRequest(http.MethodGet, "/settings", nil)
-	settings.AddCookie(cookie)
-	settingsRecorder := httptest.NewRecorder()
-	service.Handler().ServeHTTP(settingsRecorder, settings)
-	if settingsRecorder.Code != http.StatusOK {
-		t.Fatalf("settings status = %d, want %d", settingsRecorder.Code, http.StatusOK)
+	root := httptest.NewRequest(http.MethodGet, "/", nil)
+	root.AddCookie(cookie)
+	rootRecorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rootRecorder, root)
+	if rootRecorder.Code != http.StatusSeeOther {
+		t.Fatalf("root status = %d, want %d", rootRecorder.Code, http.StatusSeeOther)
 	}
-	if !strings.Contains(settingsRecorder.Body.String(), "managed by the controller") {
-		t.Fatalf("settings page should show controller-managed message: %s", settingsRecorder.Body.String())
+	if location := rootRecorder.Header().Get("Location"); !strings.HasPrefix(location, "/settings") {
+		t.Fatalf("redirect location = %q, want /settings...", location)
 	}
 }
 
@@ -1262,6 +1565,34 @@ func TestParseUPSCommandsSkipsUpscmdHeaderLine(t *testing.T) {
 
 type fakeRunner struct {
 	outputs map[string]commandResult
+}
+
+type fakeSSHAccessManager struct {
+	enabledPassword     string
+	enabledPasswordHash string
+	syncedPassword      string
+	disableCalls        int
+	err                 error
+}
+
+func (f *fakeSSHAccessManager) Enable(_ context.Context, password string) (string, error) {
+	f.enabledPassword = password
+	f.enabledPasswordHash = "$6$test$hash"
+	return f.enabledPasswordHash, f.err
+}
+
+func (f *fakeSSHAccessManager) Disable(_ context.Context) error {
+	f.disableCalls++
+	return f.err
+}
+
+func (f *fakeSSHAccessManager) SyncPassword(_ context.Context, password string) (string, error) {
+	f.syncedPassword = password
+	return "$6$test$updated-hash", f.err
+}
+
+func (f *fakeSSHAccessManager) Sync(_ context.Context, _ string) error {
+	return f.err
 }
 
 type commandResult struct {

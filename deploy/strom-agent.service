@@ -1,7 +1,6 @@
 [Unit]
 Description=Strom node agent
-After=network-online.target nut-server.service strom-firstboot.service
-Wants=network-online.target
+After=network.target nut-server.service strom-firstboot.service
 RequiresMountsFor=/var/lib/strom
 
 [Service]
