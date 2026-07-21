@@ -4,6 +4,9 @@ Strom is a distributed UPS monitoring and management system built around a contr
 
 Small Raspberry Pi nodes run NUT near the hardware, automatically detect USB UPS devices, expose them on the network, serve a per-node web dashboard and status API, and advertise themselves for discovery. A central controller discovers those nodes, adopts them, collects metrics, and eventually bridges the fleet into Home Assistant.
 
+> [!NOTE]
+> Strom was formerly named Wattkeeper. This is a clean-break rename: existing Wattkeeper nodes and controllers must be re-imaged or reinstalled, then re-adopted. Strom uses new binary names, runtime paths, mDNS discovery, and MQTT namespaces.
+
 ## Status
 
 This repository now ships the Phase 1 node agent, the Phase 2 flashable image pipeline, and a substantial Phase 3 controller foundation.
@@ -12,7 +15,7 @@ Today that means:
 
 - Raspberry Pi nodes auto-detect USB UPS hardware, generate NUT configuration, advertise themselves over mDNS, and expose a branded local dashboard with live telemetry and UPS control actions.
 - The image pipeline builds a flashable Raspberry Pi OS Lite image for node deployment.
-- The node image first-boot path now enables Raspberry Pi OverlayFS by default (read-mostly rootfs) to reduce SD card wear, with an opt-out marker file on the boot partition for operators who need writable-root behavior.
+- Node images use a read-mostly OverlayFS root to reduce SD card wear while mounting a dedicated persistent `strom-state` volume at `/var/lib/strom`, so local admin credentials, controller trust material, and stable UPS names survive normal reboots and power loss.
 - Nodes now support operator-driven factory reset through `strom-agent reset` or a boot-partition `strom-factory-reset` marker file for offline recovery.
 - The controller can discover nodes, persist them in SQLite, adopt pending nodes, forget stale node records, store controller-managed node display/location metadata, establish node-local trust material, poll adopted-node NUT variables into SQLite, expose recent UPS telemetry plus per-UPS detail/history APIs and trusted controller-side UPS commands, evaluate webhook alert rules, serve a branded React controller GUI, publish Home Assistant MQTT discovery/state payloads when configured with a broker, and re-serve adopted UPSes through an aggregate NUT listener on `:3493` that can be enabled or disabled from controller settings. Adopted nodes can be returned to pending state with `strom-agent reset` on the node.
 - The controller UPS detail surface now derives a battery runtime-decay trend and replacement estimate from stored historical `battery.runtime` samples gathered during healthy, high-charge periods.

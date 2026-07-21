@@ -106,6 +106,20 @@ type healthResponse struct {
 	UPSes                 []upsHealth `json:"upses"`
 }
 
+type diagnosticCheck struct {
+	Output string `json:"output,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+type diagnosticsResponse struct {
+	GeneratedAt time.Time             `json:"generated_at"`
+	Inventory   []nutconf.DetectedUPS `json:"inventory"`
+	USBDevices  diagnosticCheck       `json:"usb_devices"`
+	Scanner     diagnosticCheck       `json:"scanner"`
+	NUTConfig   diagnosticCheck       `json:"nut_config"`
+	NUTServer   diagnosticCheck       `json:"nut_server"`
+}
+
 type statusResponse struct {
 	Status   string `json:"status"`
 	UPSCount int    `json:"ups_count"`
@@ -218,6 +232,11 @@ type indexViewModel struct {
 	Username    string
 }
 
+type diagnosticsViewModel struct {
+	Username    string
+	Diagnostics diagnosticsResponse
+}
+
 type storedAdoption struct {
 	TokenSHA256 string `json:"token_sha256"`
 	CAPEM       string `json:"ca_pem"`
@@ -278,6 +297,13 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 				</div>
 			</div>
 			<nav id="topbar-toolbar" class="toolbar" aria-label="Dashboard actions">
+				<button id="refresh-indicator" class="refresh-indicator" type="button" aria-label="Refresh dashboard now">
+					<svg class="refresh-ring" viewBox="0 0 36 36" aria-hidden="true">
+						<circle class="refresh-ring-track" cx="18" cy="18" r="15.5"></circle>
+						<circle id="refresh-ring-progress" class="refresh-ring-progress" cx="18" cy="18" r="15.5"></circle>
+					</svg>
+					<span id="refresh-countdown" class="helper" role="status">Loading live metrics&hellip;</span>
+				</button>
 				<button
 					id="topbar-menu-toggle"
 					class="button button--ghost menu-toggle"
@@ -289,42 +315,7 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 				>
 					☰
 				</button>
-				<button id="refresh-indicator" class="refresh-indicator" type="button" aria-label="Refresh dashboard now">
-					<svg class="refresh-ring" viewBox="0 0 36 36" aria-hidden="true">
-						<circle class="refresh-ring-track" cx="18" cy="18" r="15.5"></circle>
-						<circle id="refresh-ring-progress" class="refresh-ring-progress" cx="18" cy="18" r="15.5"></circle>
-					</svg>
-					<span id="refresh-countdown" class="helper" role="status">Loading live metrics&hellip;</span>
-				</button>
 				<div class="profile-menu" id="profile-menu">
-					<button
-						id="profile-menu-toggle"
-						class="button button--ghost profile-trigger"
-						type="button"
-						data-menu-toggle
-						aria-expanded="false"
-						aria-haspopup="menu"
-					>
-						{{if .AuthEnabled}}
-						<span class="profile-avatar" aria-hidden="true">{{initials "Admin"}}</span>
-						<span class="profile-copy">
-							<strong>Admin</strong>
-							<span class="profile-copy-sub">Signed in</span>
-						</span>
-						{{else}}
-						<span class="profile-avatar profile-avatar--open" aria-hidden="true">
-							<svg viewBox="0 0 24 24" focusable="false">
-								<path d="M7 10.5V8a5 5 0 0 1 9.5-2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-								<rect x="5" y="10.5" width="14" height="9.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
-								<circle cx="12" cy="15" r="1.4" fill="currentColor"></circle>
-							</svg>
-						</span>
-						<span class="profile-copy">
-							<strong>Local access</strong>
-							<span class="profile-copy-sub">Auth disabled</span>
-						</span>
-						{{end}}
-					</button>
 					<div id="profile-menu-panel" class="menu-panel" role="menu" aria-label="Profile options" hidden>
 						<div class="menu-section">
 							<p class="menu-title">Appearance</p>
@@ -336,6 +327,9 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 						</div>
 						<div class="menu-divider" role="separator"></div>
 						<div class="menu-section">
+							<a class="menu-link menu-link--active" href="/" role="menuitem" aria-current="page">Dashboard</a>
+							{{if .AuthEnabled}}<a class="menu-link" href="/settings" role="menuitem">Settings</a>{{end}}
+							{{if .AuthEnabled}}<a class="menu-link" href="/diagnostics" role="menuitem">Diagnostics</a>{{end}}
 							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem">
 								<span class="menu-link-icon-wrap" aria-hidden="true">
 									<svg class="menu-link-icon" viewBox="0 0 24 24" focusable="false">
@@ -346,8 +340,7 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 								</span>
 								<span>Docs</span>
 							</a>
-							{{if .AuthEnabled}}<a class="menu-link" href="/settings" role="menuitem">Settings</a>{{end}}
-							{{if .AuthEnabled}}<a class="menu-link" href="/auth/logout" role="menuitem">Sign out</a>{{end}}
+							{{if .AuthEnabled}}<div class="menu-divider" role="separator"></div><a class="menu-link menu-link--sign-out" href="/auth/logout" role="menuitem">Sign out</a>{{end}}
 						</div>
 					</div>
 				</div>
@@ -426,6 +419,69 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 		</div>
 	</div>
 	<script src="/assets/app.js" defer></script>
+</body>
+</html>`))
+
+var diagnosticsTemplate = template.Must(template.New("diagnostics").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Node Diagnostics</title>
+	<link rel="stylesheet" href="/assets/styles.css">
+	<script>
+		(() => {
+			try {
+				const preference = localStorage.getItem("strom-theme-preference") || localStorage.getItem("strom-theme");
+				const theme = preference === "dark" || (preference !== "light" && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+				document.documentElement.dataset.theme = theme;
+			} catch (_) {}
+		})();
+	</script>
+</head>
+<body>
+	<main class="shell">
+		<header class="topbar surface">
+			<div class="brand"><img class="brand-mark" src="/assets/logo.svg" alt="Strom logo"><div class="brand-copy"><h1>Node Diagnostics</h1></div></div>
+			<nav id="diagnostics-toolbar" class="toolbar" aria-label="Diagnostics actions">
+				<button id="diagnostics-menu-toggle" class="button button--ghost menu-toggle" type="button" aria-expanded="false" aria-haspopup="menu" aria-label="Toggle navigation menu">☰</button>
+				<div class="profile-menu" id="diagnostics-profile-menu">
+					<div id="diagnostics-menu-panel" class="menu-panel" role="menu" aria-label="Node menu" hidden>
+						<div class="menu-section">
+							<a class="menu-link" href="/" role="menuitem">Dashboard</a>
+							<a class="menu-link" href="/settings" role="menuitem">Settings</a>
+							<a class="menu-link menu-link--active" href="/diagnostics" role="menuitem" aria-current="page">Diagnostics</a>
+							<a class="menu-link menu-link--docs" href="https://foehammer82.github.io/strom/getting-started/" target="_blank" rel="noreferrer" role="menuitem">Docs</a>
+							<div class="menu-divider" role="separator"></div>
+							<a class="menu-link menu-link--sign-out" href="/auth/logout" role="menuitem">Sign out</a>
+						</div>
+					</div>
+				</div>
+			</nav>
+		</header>
+		<section class="surface hero">
+			<div class="section-head"><div><h2>USB and NUT detection</h2><p class="helper">Captured {{.Diagnostics.GeneratedAt.Local.Format "2006-01-02 15:04:05 MST"}} for {{.Username}}.</p></div></div>
+			<div class="diagnostics-grid">
+				<article class="diagnostic-card"><h3>USB devices</h3>{{if .Diagnostics.USBDevices.Error}}<p class="diagnostic-error">{{.Diagnostics.USBDevices.Error}}</p>{{end}}<pre>{{.Diagnostics.USBDevices.Output}}</pre></article>
+				<article class="diagnostic-card"><h3>NUT scanner</h3>{{if .Diagnostics.Scanner.Error}}<p class="diagnostic-error">{{.Diagnostics.Scanner.Error}}</p>{{end}}<pre>{{.Diagnostics.Scanner.Output}}</pre></article>
+				<article class="diagnostic-card"><h3>NUT server</h3>{{if .Diagnostics.NUTServer.Error}}<p class="diagnostic-error">{{.Diagnostics.NUTServer.Error}}</p>{{end}}<pre>{{.Diagnostics.NUTServer.Output}}</pre></article>
+				<article class="diagnostic-card"><h3>Generated ups.conf</h3>{{if .Diagnostics.NUTConfig.Error}}<p class="diagnostic-error">{{.Diagnostics.NUTConfig.Error}}</p>{{end}}<pre>{{.Diagnostics.NUTConfig.Output}}</pre></article>
+			</div>
+		</section>
+	</main>
+	<script>
+		(() => {
+			const toolbar = document.getElementById("diagnostics-toolbar");
+			const menu = document.getElementById("diagnostics-profile-menu");
+			const panel = document.getElementById("diagnostics-menu-panel");
+			const toggles = [document.getElementById("diagnostics-menu-toggle")];
+			const closeMenu = () => { panel.hidden = true; toolbar.classList.remove("is-open"); toggles.forEach((toggle) => toggle.setAttribute("aria-expanded", "false")); };
+			const toggleMenu = () => { const open = panel.hidden; panel.hidden = !open; toolbar.classList.toggle("is-open", open); toggles.forEach((toggle) => toggle.setAttribute("aria-expanded", String(open))); };
+			toggles.forEach((toggle) => toggle.addEventListener("click", toggleMenu));
+			document.addEventListener("click", (event) => { if (!menu.contains(event.target)) closeMenu(); });
+			document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(); });
+		})();
+	</script>
 </body>
 </html>`))
 
@@ -520,11 +576,14 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 	mux.HandleFunc("/auth/reset", s.handleReset)
 	mux.HandleFunc("/api/health", s.handleAPIHealth)
+	mux.HandleFunc("/api/diagnostics", s.handleAPIDiagnostics)
 	mux.HandleFunc("/api/ups", s.handleAPIUPS)
 	mux.HandleFunc("/api/ups/", s.handleAPIUPS)
+	mux.HandleFunc("/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/ui", s.handleUISetting)
 	mux.HandleFunc("/settings/password", s.handleChangePassword)
+	mux.HandleFunc("/settings/api-key", s.handleAPIKeySetting)
 	mux.HandleFunc("/api/settings/ui/policy", s.handleUIPolicy)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
 	mux.HandleFunc("/status", s.handleStatus)
@@ -879,13 +938,23 @@ func (s *Service) buildSettingsViewModel(r *http.Request, username, message, err
 	if err != nil {
 		return settingsViewModel{}, err
 	}
+	readAPIKeyExists, err := s.auth.APIKeyExists(apiKeyScopeRead)
+	if err != nil {
+		return settingsViewModel{}, err
+	}
+	writeAPIKeyExists, err := s.auth.APIKeyExists(apiKeyScopeWrite)
+	if err != nil {
+		return settingsViewModel{}, err
+	}
 	return settingsViewModel{
-		Username:  username,
-		UIEnabled: uiEnabled,
-		UIManaged: uiManaged,
-		Message:   message,
-		Error:     errMessage,
-		CSRFToken: csrfToken,
+		Username:          username,
+		UIEnabled:         uiEnabled,
+		UIManaged:         uiManaged,
+		ReadAPIKeyExists:  readAPIKeyExists,
+		WriteAPIKeyExists: writeAPIKeyExists,
+		Message:           message,
+		Error:             errMessage,
+		CSRFToken:         csrfToken,
 	}, nil
 }
 
@@ -929,6 +998,61 @@ func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password-updated"})
+}
+
+func (s *Service) handleAPIKeySetting(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if err := s.validateSessionCSRF(r); err != nil {
+		writeJSONError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	var request apiKeyRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode API key request: %v", err))
+		return
+	}
+	request.Scope = strings.TrimSpace(request.Scope)
+	request.Action = strings.TrimSpace(request.Action)
+	if request.Password == "" {
+		writeJSONError(w, http.StatusBadRequest, "current password is required")
+		return
+	}
+
+	var (
+		key string
+		err error
+	)
+	switch request.Action {
+	case "reveal":
+		key, err = s.auth.RevealAPIKey(request.Scope, request.Password)
+		if err == nil && key == "" {
+			writeJSONError(w, http.StatusNotFound, "API key has not been generated")
+			return
+		}
+	case "regenerate":
+		key, err = s.auth.RegenerateAPIKey(request.Scope, request.Password)
+	default:
+		writeJSONError(w, http.StatusBadRequest, "action must be reveal or regenerate")
+		return
+	}
+	if err != nil {
+		status := http.StatusInternalServerError
+		message := err.Error()
+		if errors.Is(err, errInvalidCredentials) {
+			status = http.StatusUnauthorized
+			message = "current password is incorrect"
+		}
+		writeJSONError(w, status, message)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"scope": request.Scope, "key": key})
 }
 
 // respondSettingsError re-renders the settings page with an error message
@@ -1165,7 +1289,7 @@ func (s *Service) handleStatusDetails(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, ok := s.requireSession(w, r); !ok {
+	if !s.requireReadAccess(w, r) {
 		return
 	}
 
@@ -1188,7 +1312,7 @@ func (s *Service) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !s.requireControllerOrSession(w, r) {
+	if !s.requireReadAccess(w, r) {
 		return
 	}
 
@@ -1201,6 +1325,34 @@ func (s *Service) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (s *Service) handleAPIDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.requireReadAccess(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.buildDiagnosticsResponse(r.Context()))
+}
+
+func (s *Service) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	username, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := diagnosticsTemplate.Execute(w, diagnosticsViewModel{Username: username, Diagnostics: s.buildDiagnosticsResponse(r.Context())}); err != nil && s.logger != nil {
+		s.logger.Printf("render diagnostics failed: %v", err)
+	}
+}
+
 func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/ups")
 	if path == "" || path == "/" {
@@ -1209,7 +1361,7 @@ func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if _, ok := s.requireSession(w, r); !ok {
+		if !s.requireReadAccess(w, r) {
 			return
 		}
 		writeJSON(w, http.StatusOK, s.buildUPSStatuses(r.Context()))
@@ -1231,7 +1383,7 @@ func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if _, ok := s.requireSession(w, r); !ok {
+		if !s.requireReadAccess(w, r) {
 			return
 		}
 		response, err := s.buildUPSDetailResponse(r.Context(), name)
@@ -1250,7 +1402,7 @@ func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if !s.requireControllerOrSession(w, r) {
+		if !s.requireWriteAccess(w, r) {
 			return
 		}
 		var request upsCommandRequest
@@ -1282,7 +1434,7 @@ func (s *Service) handleAPIUPS(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if !s.requireControllerOrSession(w, r) {
+		if !s.requireWriteAccess(w, r) {
 			return
 		}
 		var request upsSetVarRequest
@@ -1370,16 +1522,39 @@ func (s *Service) requireSession(w http.ResponseWriter, r *http.Request) (string
 	return username, true
 }
 
-func (s *Service) requireControllerOrSession(w http.ResponseWriter, r *http.Request) bool {
+func (s *Service) requireReadAccess(w http.ResponseWriter, r *http.Request) bool {
 	if !s.auth.Enabled() {
 		return true
 	}
-	matched, err := s.controllerTokenMatches(r)
-	if err == nil && matched {
+	if matched, err := s.controllerTokenMatches(r); err == nil && matched {
+		return true
+	} else if err != nil && s.logger != nil {
+		s.logger.Printf("controller bearer auth unavailable: %v", err)
+	}
+	scope, matched, err := s.localAPIKeyMatches(r)
+	if err == nil && matched && (scope == apiKeyScopeRead || scope == apiKeyScopeWrite) {
+		return true
+	} else if err != nil && s.logger != nil {
+		s.logger.Printf("local API key auth unavailable: %v", err)
+	}
+	_, ok := s.requireSession(w, r)
+	return ok
+}
+
+func (s *Service) requireWriteAccess(w http.ResponseWriter, r *http.Request) bool {
+	if !s.auth.Enabled() {
 		return true
 	}
-	if err != nil && s.logger != nil {
+	if matched, err := s.controllerTokenMatches(r); err == nil && matched {
+		return true
+	} else if err != nil && s.logger != nil {
 		s.logger.Printf("controller bearer auth unavailable: %v", err)
+	}
+	scope, matched, err := s.localAPIKeyMatches(r)
+	if err == nil && matched && scope == apiKeyScopeWrite {
+		return true
+	} else if err != nil && s.logger != nil {
+		s.logger.Printf("local API key auth unavailable: %v", err)
 	}
 	_, ok := s.requireSession(w, r)
 	return ok
@@ -1425,6 +1600,28 @@ func (s *Service) controllerTokenMatches(r *http.Request) (bool, error) {
 		return false, nil
 	}
 	return adoption.TokenSHA256 == tokenSHA256Hex(token), nil
+}
+
+func (s *Service) localAPIKeyMatches(r *http.Request) (string, bool, error) {
+	if r == nil {
+		return "", false, nil
+	}
+	token := bearerToken(r)
+	if token == "" {
+		return "", false, nil
+	}
+	return s.auth.MatchAPIKey(token)
+}
+
+func bearerToken(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(authorization[len("Bearer "):])
 }
 
 func (s *Service) loadAdoption() (*storedAdoption, error) {
@@ -1522,6 +1719,34 @@ func (s *Service) buildHealthResponse(ctx context.Context) (healthResponse, erro
 	response.UPSes = s.buildUPSStatuses(ctx)
 
 	return response, nil
+}
+
+func (s *Service) buildDiagnosticsResponse(ctx context.Context) diagnosticsResponse {
+	return diagnosticsResponse{
+		GeneratedAt: time.Now(),
+		Inventory:   s.inventory(),
+		USBDevices:  s.runDiagnosticCommand(ctx, "lsusb"),
+		Scanner:     s.runDiagnosticCommand(ctx, "nut-scanner", "-U", "-q"),
+		NUTConfig:   s.readDiagnosticFile(filepath.Join(s.rootPath, "etc", "nut", "ups.conf")),
+		NUTServer:   s.runDiagnosticCommand(ctx, "systemctl", "is-active", "nut-server"),
+	}
+}
+
+func (s *Service) runDiagnosticCommand(ctx context.Context, path string, args ...string) diagnosticCheck {
+	output, err := s.runner.CombinedOutput(ctx, path, args...)
+	check := diagnosticCheck{Output: strings.TrimSpace(string(output))}
+	if err != nil {
+		check.Error = fmt.Sprintf("%s: %v", strings.Join(append([]string{path}, args...), " "), err)
+	}
+	return check
+}
+
+func (s *Service) readDiagnosticFile(path string) diagnosticCheck {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return diagnosticCheck{Error: fmt.Sprintf("read %s: %v", path, err)}
+	}
+	return diagnosticCheck{Output: strings.TrimSpace(string(content))}
 }
 func (s *Service) buildUPSStatuses(ctx context.Context) []upsHealth {
 	devices := s.inventory()

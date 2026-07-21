@@ -56,13 +56,20 @@ Strom adds a first-boot service that:
 - suppresses Raspberry Pi OS first-user setup prompts by shipping a pre-created `strom` account
 - locks that account password on first boot so password login is not part of the normal workflow
 - sets the hostname to `strom-node-<last4 serial>`
-- creates `/var/lib/strom`
-- enables Raspberry Pi OverlayFS for a read-mostly root filesystem
+- mounts the dedicated `strom-state` ext4 partition at `/var/lib/strom`
+- enables Raspberry Pi OverlayFS for a read-mostly root filesystem only after persistent node state is mounted
 - marks itself complete and disables itself
 
-When OverlayFS is enabled, first boot may include a one-time additional reboot.
+The `strom-state` partition preserves local admin credentials, controller trust material, adoption state, and stable UPS names across normal reboots and power loss. When OverlayFS is enabled, first boot may include a one-time additional reboot.
 
-To opt out for a specific node, place a `strom-overlayfs-disable` file on the boot partition before first boot.
+Images built before this change may have enabled Raspberry Pi OverlayFS without the persistent `strom-state` partition. To restore persistence on an existing node until it can be reflashed, run:
+
+```sh
+sudo raspi-config nonint do_overlayfs 1
+sudo reboot
+```
+
+After the reboot, confirm `findmnt -n -o FSTYPE /` does not report `overlay`. Set the local admin password again afterward. If the node had been adopted before the power loss, re-adopt it because its on-node controller trust material may also have been lost.
 
 ## Local Validation
 
@@ -72,8 +79,8 @@ When working on the image pipeline or Pi provisioning flow, the current validati
 2. If you are iterating on the custom pi-gen stage after a failed run, retry with `uv run strom image node --version v0.1.0-rc1 --continue`.
 3. Flash the image with Raspberry Pi Imager and apply WiFi customization there. Add SSH public keys only if you want shell access.
 4. Boot a Pi Zero 2 W and attach a USB UPS.
-5. Verify there is no first-boot username or password prompt, then verify hostname rewrite, `/var/lib/strom` creation, mDNS advertisement, and remote `upsc` access.
-6. Verify OverlayFS is active (`findmnt -n -o FSTYPE /` should report `overlay`) unless you intentionally set `strom-overlayfs-disable`.
+5. Verify there is no first-boot username or password prompt, then verify hostname rewrite, the `strom-state` mount at `/var/lib/strom`, mDNS advertisement, and remote `upsc` access.
+6. Verify `findmnt -n -o FSTYPE /` reports `overlay`, then set the local admin password, reboot or power-cycle the node, and verify the original password signs in rather than returning to the bootstrap page.
 
 ## Security Notes
 

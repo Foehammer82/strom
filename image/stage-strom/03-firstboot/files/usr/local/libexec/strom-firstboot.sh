@@ -1,15 +1,14 @@
 #!/bin/sh
 set -eu
 
-overlay_opt_out=''
-for marker in /boot/firmware/strom-overlayfs-disable /boot/strom-overlayfs-disable; do
-	if [ -f "$marker" ]; then
-		overlay_opt_out="$marker"
-		break
-	fi
-done
+state_dir=/var/lib/strom
 
-install -d -m 0755 /var/lib/strom
+if ! mountpoint -q "$state_dir"; then
+	echo "strom state partition is not mounted at $state_dir" >&2
+	exit 1
+fi
+
+install -d -m 0755 "$state_dir"
 
 serial=''
 if [ -r /sys/firmware/devicetree/base/serial-number ]; then
@@ -46,11 +45,13 @@ else
 	printf '127.0.1.1\t%s\n' "$hostname" >> /etc/hosts
 fi
 
-# Enable Raspberry Pi OverlayFS by default to reduce SD card wear from steady writes.
-# Place /boot/firmware/strom-overlayfs-disable before first boot to opt out.
-if [ ! -f /var/lib/strom/.overlayfs-enabled ] && [ -z "$overlay_opt_out" ] && command -v raspi-config >/dev/null 2>&1; then
+touch "$state_dir/.firstboot-complete"
+
+# The persistent state partition is mounted before this service, so enabling
+# Raspberry Pi's RAM-backed root overlay cannot discard node credentials.
+if [ ! -f "$state_dir/.overlayfs-enabled" ] && command -v raspi-config >/dev/null 2>&1; then
 	if raspi-config nonint do_overlayfs 0 >/dev/null 2>&1; then
-		touch /var/lib/strom/.overlayfs-enabled
+		touch "$state_dir/.overlayfs-enabled"
 		sync
 		if systemctl --no-block reboot >/dev/null 2>&1; then
 			exit 0
@@ -60,7 +61,5 @@ if [ ! -f /var/lib/strom/.overlayfs-enabled ] && [ -z "$overlay_opt_out" ] && co
 		fi
 	fi
 fi
-
-touch /var/lib/strom/.firstboot-complete
 
 systemctl disable strom-firstboot.service >/dev/null 2>&1 || true

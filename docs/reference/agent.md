@@ -15,23 +15,48 @@ The agent is the hardware-facing process that runs on a Raspberry Pi node near t
 
 ## HTTP Endpoints
 
-The agent exposes a node dashboard at `/` plus JSON endpoints at `GET /status` and `GET /healthz` on port `80` by default.
+The agent listens on port `80` by default. All JSON errors use an `error` field. The API never accepts arbitrary shell commands; diagnostics run a fixed, read-only command set.
 
-`GET /status` is the public, minimal response intended for quick checks and discovery-oriented state.
+### Authentication
 
-`GET /status/details` is the richer node status payload intended for the local UI and a later authenticated audience.
+`GET /status` is the only public operational endpoint. It returns only aggregate status and UPS count so it is safe for discovery and quick reachability checks.
 
-`GET /healthz` is the richer compatibility health payload and includes the same class of detailed node state.
+All local-admin routes require the `strom_session` cookie after bootstrap. JSON clients can create that session with `POST /auth/bootstrap` or `POST /auth/login`; browser form submissions also require a CSRF token. Settings can also issue node-local read and write API keys for integrations, supplied as `Authorization: Bearer <key>`. An adopted controller authenticates with its separate node-specific bearer token. The controller token can read health/diagnostics and perform UPS control; controller-policy and OTA routes require that token specifically.
 
-`GET /settings` exposes the signed-in settings surface for local node UI policy, sign-out, and auth reset.
+The read key can access detailed health, diagnostics, and UPS inventory/detail routes. The write key includes every read permission plus UPS commands and writable-variable updates. Local keys never grant adoption, controller policy, or OTA access. Settings requires the current local-admin password to reveal or rotate either key; replacing a key invalidates its predecessor immediately. The pair is stored in `/var/lib/strom/webui-auth.json` with the local admin configuration, which is restricted to the agent owner (`0600`) and removed by local-auth or factory reset.
 
-`POST /api/settings/ui/policy` is the controller-authenticated endpoint used after adoption to apply local UI policy (`managed` + `enabled`) through the same backing auth state used by `/settings`.
+On an uninitialized node, opening `/` redirects to `/auth/bootstrap`, where the single local `admin` password is created. There is no default password. `--http-auth=false` disables these protections only for local development.
 
-`POST /api/agent/update` is the controller-authenticated OTA endpoint for signed agent binary pushes. The node expects `version`, `binary_base64`, `sha256`, and `signature_base64`, verifies the signature against the adopted controller CA certificate, and atomically replaces the local agent binary when verification succeeds.
+### Endpoint Reference
 
-On an uninitialized node with auth enabled, visiting `/` redirects to `/auth/bootstrap`, which prompts for a password for the single local `admin` account (there is no built-in default password). After bootstrap, `/`, `/status/details`, `/healthz`, and `/settings` require a session cookie created by `POST /auth/login` (bootstrap itself also starts a session). For development only, auth can be bypassed with `--http-auth=false`.
+| Method and path | Access | Description |
+| --- | --- | --- |
+| `GET /` | Local admin | Node dashboard with live UPS telemetry and controls. |
+| `GET /status` | Public | Minimal JSON: aggregate node state and UPS count. |
+| `GET /status/details` | Local admin, read/write key, or controller | Detailed node health, inventory, temperature, disk capacity, and UPS summaries. |
+| `GET /healthz` | Local admin, read/write key, or controller | Compatibility alias for the detailed health payload. |
+| `GET /api/health` | Local admin, read/write key, or controller | Detailed health payload for programmatic clients. |
+| `GET /diagnostics` | Local admin | Browser diagnostics page for USB and NUT detection. |
+| `GET /api/diagnostics` | Local admin, read/write key, or controller | JSON diagnostic snapshot: `lsusb`, `nut-scanner -U -q`, generated `ups.conf`, `nut-server` state, and the agent inventory. |
+| `GET /api/ups` | Local admin, read/write key, or controller | UPS inventory with live summary metrics. |
+| `GET /api/ups/{name}` | Local admin, read/write key, or controller | Raw NUT variables, normalized metrics, supported instant commands, and writable variables for one UPS. |
+| `POST /api/ups/{name}/command` | Local admin, write key, or controller | Runs an advertised NUT instant command. Body: `{"cmd":"..."}`. |
+| `POST /api/ups/{name}/setvar` | Local admin, write key, or controller | Updates an advertised writable NUT variable. Body: `{"var":"...","value":"..."}`. |
+| `GET`, `POST /auth/bootstrap` | Public until initialized | Shows or submits first-run local-admin setup. JSON body: `new_password`, `confirm_password`. A successful bootstrap creates a session. |
+| `GET`, `POST /auth/login` | Public after bootstrap | Shows or submits local-admin login. JSON body: `username`, `password`. A successful login creates or rotates a session. |
+| `POST /auth/logout` | Local admin | Ends the current local-admin session. |
+| `POST /auth/reset` | Local admin | Clears local web authentication and returns the node to first-run bootstrap. |
+| `GET /settings` | Local admin | Browser settings page for password, API keys, and local UI policy. |
+| `POST /settings/api-key` | Local admin + CSRF | Password-confirmed key reveal or generation. JSON body: `scope` (`read` or `write`), `action` (`reveal` or `regenerate`), and `password`. |
+| `POST /settings/password` | Local admin | Changes the local-admin password. |
+| `POST /settings/ui` | Local admin | Enables or disables the local dashboard when policy is not controller-managed. |
+| `POST /adopt` | Pending controller | Stores controller trust material and credentials during one-time adoption. Re-adoption is rejected. |
+| `POST /api/settings/ui/policy` | Controller | Applies controller-managed local UI policy. Body: `{"managed":true,"enabled":true}`. |
+| `POST /api/agent/update` | Controller | Applies a controller-signed agent update. Body includes `version`, `binary_base64`, `sha256`, and `signature_base64`; success reports `restart_required=true`. |
 
-To manually reset local web auth on a node, remove `/var/lib/strom/webui-auth.json` and revisit `/`; the node returns to the bootstrap flow.
+The diagnostics endpoints are the first place to investigate a USB UPS that does not appear in the dashboard: an entry in `lsusb` but not `nut-scanner` points to NUT driver support or scanner behavior, while scanner output with no generated `ups.conf` points to agent configuration/reload behavior.
+
+To manually reset local web auth on a node, remove `/var/lib/strom/webui-auth.json` and revisit `/`; the node returns to the bootstrap flow and any local API keys are invalidated.
 
 When the controller marks local UI policy as managed for an adopted node, the local settings toggle is locked. Releasing policy from the controller returns control to the node-local admin in `/settings`.
 

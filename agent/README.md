@@ -59,6 +59,8 @@ curl http://127.0.0.1/healthz
 upsc <stable-ups-name>@<pi-ip>
 ```
 
+1. When USB detection needs investigation, sign in to the local node UI and open `/diagnostics`, or call authenticated `GET /api/diagnostics`. It reports `lsusb`, `nut-scanner -U -q`, the generated `ups.conf`, and `nut-server` state without requiring SSH access.
+
 The public status response should stay minimal: overall node status and UPS count only. The browser dashboard at `/`, `GET /status/details`, and `GET /healthz` carry the richer node details used for local troubleshooting and future authenticated access.
 
 On a fresh node, the first browser client to reach `/` is redirected to `/auth/bootstrap` and must choose a password for the single local `admin` account before anything else is reachable. There is no built-in default password. After bootstrapping, `/`, `/status/details`, `/healthz`, and `/settings` use a session cookie unless the process is explicitly started with `--http-auth=false`.
@@ -67,11 +69,13 @@ Node-local auth contract:
 
 - Browser HTML form flows (`/auth/bootstrap`, `/auth/login`, `/auth/logout`, `/auth/reset`, `/settings/ui`, `/settings/password`) require a CSRF token (`csrf_token` form field or `X-CSRF-Token` header).
 - JSON API clients can bootstrap with `POST /auth/bootstrap` (`new_password`/`confirm_password`) or log in with `POST /auth/login`, both using `Content-Type: application/json`, and then use the returned `strom_session` cookie for authenticated endpoints (`/status/details`, `/healthz`, and protected `/api/*` routes).
+- Settings can generate a node-local read API key and write API key for integrations. Use either with `Authorization: Bearer <key>`; the read key permits detailed node health, diagnostics, and UPS read endpoints, while the write key additionally permits UPS commands and writable-variable updates. Local API keys cannot adopt a node, change controller policy, or push OTA updates.
+- API keys are stored in `/var/lib/strom/webui-auth.json` with the local admin configuration. The file is root-owned with `0600` permissions; Settings requires the current admin password to reveal or regenerate a key. Regenerating one key immediately invalidates only its prior value.
 - Session cookies expire after the configured session TTL (12h by default), and a successful login rotates any existing session token.
-- Resetting local auth (`/auth/reset`) clears the current admin account and all sessions and returns the node to its pending first-run state, so the next visit must complete `/auth/bootstrap` again to choose a new password.
+- Resetting local auth (`/auth/reset`) clears the current admin account, API keys, and all sessions and returns the node to its pending first-run state, so the next visit must complete `/auth/bootstrap` again to choose a new password.
 - When requests arrive over TLS (or `X-Forwarded-Proto: https`), auth and CSRF cookies are emitted with `Secure` in addition to `HttpOnly` and `SameSite=Strict`.
 
-The settings page lets the local admin sign out, reset node-local web auth, and toggle the local dashboard on or off.
+The settings page lets the local admin generate, reveal, copy, and rotate scoped API keys; sign out; reset node-local web auth; and toggle the local dashboard on or off.
 
 For adopted nodes, the controller uses the same node-side policy surface (`POST /api/settings/ui/policy`) to manage local UI availability. When the controller has policy management enabled, node-local UI toggles are blocked in settings; when the controller releases policy, the node returns to local admin control. Local reset paths are:
 

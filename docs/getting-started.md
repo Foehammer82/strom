@@ -31,7 +31,7 @@ This produces `dist/strom-node-<version>.img.xz` and a `.sha256` file you can ve
 
 ## 3. Boot And Connect
 
-1. Insert the SD card, power on the Pi, and let first boot finish (it may reboot once more automatically).
+1. Insert the SD card, power on the Pi, and let first boot finish. It may reboot once more while enabling the read-only root overlay.
 2. Attach the UPS over USB.
 3. Once the node is on your network, open `http://<pi-ip>/` in a browser.
 
@@ -39,7 +39,7 @@ The hostname defaults to `strom-node-<last4 serial>`.
 
 ## 4. Set The Admin Password
 
-The first time you open the node, you're prompted to set a password for the single local `admin` account. There is no built-in default password — you choose one during this first-run step, then sign in with it going forward.
+The first time you open the node, you're prompted to set a password for the single local `admin` account. There is no built-in default password — you choose one during this first-run step, then sign in with it going forward. The account is stored on the node's persistent storage, so later restarts and power loss require a normal sign-in rather than a new first-time password.
 
 ## Validate The Node
 

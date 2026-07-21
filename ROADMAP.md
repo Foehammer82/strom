@@ -252,6 +252,9 @@ automatically with correct device grouping, controls work.
 - [x] Battery health trending / replace-by estimates from runtime decay
 - [x] Backup/restore of controller DB
 - [x] Read-only rootfs or overlayfs on nodes to survive SD card abuse
+      The node image mounts a dedicated persistent `strom-state` volume at
+      `/var/lib/strom` before enabling Raspberry Pi's RAM-backed OverlayFS,
+      keeping credentials and controller trust material durable across reboot.
 - [x] Multi-UPS-per-node support verification (USB hub on a 3A+ etc.)
 
 ## Phase 5.5 - Release orchestration and auto-versioning
@@ -312,7 +315,8 @@ discovered while doing that validation.
       Phase 2 validation sequence
 - [x] Boot a real Pi (Zero 2 W or other supported target) and verify
       first-boot behavior: hostname rewrite to `strom-node-<last4 serial>`,
-      `/var/lib/strom` creation, and the OverlayFS first-boot reboot
+      `strom-state` mount at `/var/lib/strom`, and the OverlayFS first-boot
+      reboot
 - [ ] Plug in a real USB UPS and verify zero-config detection: generated
       `ups.conf`/`upsd.conf`/`upsd.users`, stable UPS naming across reboots,
       and `nut-server`/`nut-driver@` reload behavior

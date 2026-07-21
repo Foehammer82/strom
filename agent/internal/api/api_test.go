@@ -104,6 +104,77 @@ func TestHealthzRejectsUnsupportedMethods(t *testing.T) {
 	}
 }
 
+func TestAPIDiagnosticsReturnsUSBAndNUTChecks(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	configDir := filepath.Join(tempDir, "etc", "nut")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "ups.conf"), []byte("[ups-a]\ndriver = usbhid-ups\n"), 0o600); err != nil {
+		t.Fatalf("write ups.conf: %v", err)
+	}
+
+	service := New(nil, Options{
+		RootPath:    tempDir,
+		DisableAuth: true,
+		Runner: fakeRunner{outputs: map[string]commandResult{
+			"lsusb":                          {output: []byte("Bus 001 Device 002: ID 051d:0002 APC UPS\n")},
+			"nut-scanner -U -q":              {output: []byte("[nutdev1]\ndriver = usbhid-ups\nport = auto\n")},
+			"systemctl is-active nut-server": {output: []byte("active\n")},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/diagnostics", nil)
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var response diagnosticsResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !strings.Contains(response.USBDevices.Output, "APC UPS") {
+		t.Fatalf("USB devices = %q, want APC UPS", response.USBDevices.Output)
+	}
+	if !strings.Contains(response.Scanner.Output, "usbhid-ups") {
+		t.Fatalf("scanner = %q, want usbhid-ups", response.Scanner.Output)
+	}
+	if response.NUTServer.Output != "active" || response.NUTServer.Error != "" {
+		t.Fatalf("NUT server = %#v, want active with no error", response.NUTServer)
+	}
+	if !strings.Contains(response.NUTConfig.Output, "driver = usbhid-ups") {
+		t.Fatalf("ups.conf = %q, want driver", response.NUTConfig.Output)
+	}
+}
+
+func TestDiagnosticsPageIncludesResponsiveNavigation(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	service := New(nil, Options{RootPath: tempDir, AuthPath: filepath.Join(tempDir, "webui-auth.json"), Runner: fakeRunner{}})
+	cookies := loginAsDefaultAdmin(t, service)
+	cookie := cookieByName(cookies, sessionCookieName)
+
+	req := httptest.NewRequest(http.MethodGet, "/diagnostics", nil)
+	req.AddCookie(cookie)
+	recorder := httptest.NewRecorder()
+	service.Handler().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{"diagnostics-menu-toggle", "diagnostics-profile-menu", "strom-theme-preference"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("diagnostics page missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestStatusReturnsBasicPublicPayload(t *testing.T) {
 	t.Parallel()
 
@@ -928,6 +999,18 @@ func TestSettingsCanToggleLocalUIAndResetAuth(t *testing.T) {
 	}
 	if !strings.Contains(settingsRecorder.Body.String(), "Node Settings") {
 		t.Fatalf("settings page missing heading: %s", settingsRecorder.Body.String())
+	}
+	if !strings.Contains(settingsRecorder.Body.String(), "strom-theme-preference") {
+		t.Fatalf("settings page missing persisted theme bootstrap: %s", settingsRecorder.Body.String())
+	}
+	if !strings.Contains(settingsRecorder.Body.String(), "class=\"status\">Enabled") {
+		t.Fatalf("settings page missing local UI status indicator: %s", settingsRecorder.Body.String())
+	}
+	if !strings.Contains(settingsRecorder.Body.String(), "Reset local web access?") {
+		t.Fatalf("settings page missing reset confirmation: %s", settingsRecorder.Body.String())
+	}
+	if !strings.Contains(settingsRecorder.Body.String(), "settings-menu-toggle") {
+		t.Fatalf("settings page missing responsive menu toggle: %s", settingsRecorder.Body.String())
 	}
 
 	disable := httptest.NewRequest(http.MethodPost, "/settings/ui", strings.NewReader(`{"enabled":false}`))

@@ -2,6 +2,9 @@
 
 Strom is a distributed UPS monitoring system built around small Raspberry Pi nodes that auto-detect USB UPS devices, configure NUT locally, and advertise themselves for discovery.
 
+> [!NOTE]
+> Strom was formerly named Wattkeeper. This is a clean-break rename: existing Wattkeeper nodes and controllers must be re-imaged or reinstalled, then re-adopted. Strom uses new binary names, runtime paths, mDNS discovery, and MQTT namespaces.
+
 This documentation set is the user-facing entry point for the project. It is written in Markdown and organized so operators and evaluators can find the current path quickly.
 
 ## Start Here

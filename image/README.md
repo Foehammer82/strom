@@ -57,9 +57,9 @@ The image relies on Raspberry Pi OS first boot for filesystem expansion. Strom a
 
 This service does not replace or overwrite Raspberry Pi Imager's boot partition customization flow. WiFi settings, SSH key injection, and other standard Imager data still flow through the usual `firstrun.sh` handling provided by Raspberry Pi OS.
 
-The first-boot script also enables Raspberry Pi OverlayFS by default through `raspi-config nonint do_overlayfs 0` and triggers a one-time reboot when that change is applied. This gives nodes a read-mostly root filesystem that is more resilient to SD card wear.
+The image adds a `strom-state` ext4 partition and mounts it at `/var/lib/strom`. This preserves local admin credentials, adoption state, controller TLS material, and stable UPS names across restarts and power loss. After that mount is available, first boot enables Raspberry Pi OverlayFS to keep ordinary root filesystem writes in RAM and reduce SD card wear; this may cause one additional reboot.
 
-If you need writable-root behavior for a particular deployment, create `strom-overlayfs-disable` on the boot partition before first boot (for example `/boot/firmware/strom-overlayfs-disable` once mounted on Linux).
+Images built before this change may have enabled Raspberry Pi OverlayFS without the `strom-state` partition. To restore persistence on an existing node until it can be reflashed, run `sudo raspi-config nonint do_overlayfs 1`, reboot, and confirm `findmnt -n -o FSTYPE /` no longer reports `overlay`. Set the local admin password again afterward. If the node had been adopted before the power loss, re-adopt it because its on-node controller trust material may also have been lost.
 
 ## Security Constraints
 

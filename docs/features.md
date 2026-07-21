@@ -16,6 +16,7 @@ This page separates what Strom ships today from what is still planned.
 - serves detailed node JSON at `/status/details`
 - preserves `/healthz` as a detailed compatibility endpoint
 - requires first-run bootstrap and session-based local auth for the dashboard and detailed endpoints unless auth is explicitly disabled for development
+- includes scoped read/write bearer API keys for local integrations, with password-confirmed reveal and rotation
 - includes a local settings surface for sign-out, auth reset, and node UI enable/disable
 
 ### Flashable Node Image
