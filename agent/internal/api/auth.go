@@ -122,6 +122,7 @@ type settingsViewModel struct {
 	UpdatesPendingVersion   string
 	UpdatesAvailableVersion string
 	UpdatesReleaseURL       string
+	UpdatesLastCheckedAt    string
 	UpdatesLastCheckError   string
 	UpdatesLastInstallError string
 	Error                   string
@@ -243,6 +244,7 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 		.message { background:var(--accent-soft); color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line)); }
 		.error { background:var(--danger-soft); color:var(--danger); border:1px solid color-mix(in srgb,var(--danger) 28%,var(--line)); }
 		button, .link { min-height:44px; padding:10px 16px; border-radius:999px; border:1px solid transparent; background:var(--accent); color:#fff; font:inherit; font-weight:700; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
+		button[hidden], .link[hidden] { display:none; }
 		.link { background:transparent; border-color:var(--line); color:var(--ink); }
 		.button--secondary { background:transparent; border-color:var(--line); color:var(--ink); }
 		.danger-zone { border-color:color-mix(in srgb,var(--danger) 38%,var(--line)); background:var(--danger-soft); }
@@ -427,9 +429,9 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 					<div class="section-head">
 						<div>
 							<h2>Software updates</h2>
-							<p>Installed version <strong>{{.InstalledVersion}}</strong>.{{if .UpdatesPendingVersion}} Update to {{.UpdatesPendingVersion}} is pending health confirmation.{{end}}</p>
+							<p>Installed version <strong>{{.InstalledVersion}}</strong>.{{if .UpdatesPendingVersion}} Update to {{.UpdatesPendingVersion}} is pending health confirmation.{{end}} <span id="updates-last-checked">{{if .UpdatesLastCheckedAt}}Last checked {{.UpdatesLastCheckedAt}}.{{else}}Not checked yet.{{end}}</span></p>
 						</div>
-						<span class="status" id="updates-status-badge">{{if .UpdatesAvailableVersion}}Update available{{else}}Up to date{{end}}</span>
+						<span class="status" id="updates-status-badge">{{if .UpdatesAvailableVersion}}Update available{{else if .UpdatesLastCheckedAt}}Up to date{{else}}Not checked yet{{end}}</span>
 					</div>
 					{{if .UpdatesAvailableVersion}}<p id="updates-available-message">Version {{.UpdatesAvailableVersion}} is available.{{if .UpdatesReleaseURL}} <a href="{{.UpdatesReleaseURL}}" target="_blank" rel="noreferrer">View release notes</a>{{end}}</p>{{end}}
 					<div id="updates-action-error" class="error dialog-error" role="alert" {{if not .UpdatesLastCheckError}}{{if not .UpdatesLastInstallError}}hidden{{end}}{{end}}>{{if .UpdatesLastInstallError}}{{.UpdatesLastInstallError}}{{else}}{{.UpdatesLastCheckError}}{{end}}</div>
@@ -694,6 +696,7 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 			const updatesStatusBadge = document.getElementById("updates-status-badge");
 			const updatesActionError = document.getElementById("updates-action-error");
 			const updatesAvailableMessage = document.getElementById("updates-available-message");
+			const updatesLastChecked = document.getElementById("updates-last-checked");
 			let updatesAvailableVersion = {{printf "%q" .UpdatesAvailableVersion}};
 			const showUpdatesError = (message) => { if (!updatesActionError) return; updatesActionError.textContent = message; updatesActionError.hidden = false; };
 			const clearUpdatesError = () => { if (!updatesActionError) return; updatesActionError.hidden = true; updatesActionError.textContent = ""; };
@@ -706,6 +709,12 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 					const payload = await response.json();
 					if (!response.ok) throw new Error(payload.error || "Unable to check for updates");
 					updatesAvailableVersion = payload.available_version || "";
+					if (updatesLastChecked) {
+						const checkedAt = payload.last_checked_at ? new Date(payload.last_checked_at) : null;
+						updatesLastChecked.textContent = checkedAt && !Number.isNaN(checkedAt.getTime())
+							? "Last checked " + checkedAt.toLocaleString() + "."
+							: "Just checked.";
+					}
 					if (updatesAvailableVersion) {
 						updatesStatusBadge.textContent = "Update available";
 						updatesInstallButton.hidden = false;

@@ -147,6 +147,46 @@ func TestCheckerCheckUpToDate(t *testing.T) {
 	}
 }
 
+func TestCheckerCheckDevBuildAlwaysReportsLatestAvailable(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	binaryContent := []byte("fake-binary")
+	archive := buildTarGz(t, []tarEntry{
+		{name: "strom-agent-v0.1.8-linux-arm64/strom-agent", typeflag: tar.TypeReg, content: binaryContent},
+	})
+	artifact := Artifact{
+		OS: "linux", Arch: "arm64",
+		Filename:     "strom-agent-v0.1.8-linux-arm64.tar.gz",
+		Size:         int64(len(archive)),
+		SHA256:       sha256Hex(archive),
+		BinarySHA256: sha256Hex(binaryContent),
+	}
+	// The published release is "older" than the dev build's base version,
+	// but a non-stable installed version (e.g. a local "-dirty" build) can
+	// never be compared against a release tag, so the latest verified
+	// release should still be reported as available rather than erroring
+	// or claiming to be up to date.
+	server := fakeGitHubRelease(t, priv, "v0.1.8", artifact, archive)
+	defer server.Close()
+
+	store := NewStore(t.TempDir())
+	github := &GitHubClient{BaseURL: server.URL, Repository: "owner/repo"}
+	checker := newTestChecker(t, store, github, pub, "v0.1.9-dirty")
+
+	result, err := checker.Check(context.Background())
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if result.UpToDate {
+		t.Fatal("expected an available update to be reported for a non-stable installed version")
+	}
+	if result.AvailableVersion != "v0.1.8" {
+		t.Fatalf("AvailableVersion = %q, want v0.1.8", result.AvailableVersion)
+	}
+}
+
 func TestCheckerCheckRejectsBadSignature(t *testing.T) {
 	pub, _, err := ed25519.GenerateKey(nil)
 	if err != nil {

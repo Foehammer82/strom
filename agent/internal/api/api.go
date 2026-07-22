@@ -1143,6 +1143,22 @@ func (s *Service) handleSettings(w http.ResponseWriter, r *http.Request) {
 	s.renderSettingsPage(w, http.StatusOK, viewModel)
 }
 
+// formatUpdatesCheckedAt renders a persisted RFC3339 last-checked timestamp
+// as a short, human-readable string for the settings page. It returns an
+// empty string (rather than an error) for an empty or unparsable input, so
+// the caller can treat "" as "never checked" without special-casing parse
+// failures.
+func formatUpdatesCheckedAt(rfc3339 string) string {
+	if rfc3339 == "" {
+		return ""
+	}
+	parsed, err := time.Parse(time.RFC3339, rfc3339)
+	if err != nil {
+		return ""
+	}
+	return parsed.Local().Format("Jan 2, 2006 15:04")
+}
+
 // buildSettingsViewModel gathers everything the settings page needs to
 // render. It is shared by handleSettings and handleChangePassword's error
 // path so the page can be re-rendered consistently after a failed password
@@ -1191,6 +1207,7 @@ func (s *Service) buildSettingsViewModel(r *http.Request, username, message, err
 		UpdatesPendingVersion:   updatesStatus.PendingVersion,
 		UpdatesAvailableVersion: updatesStatus.AvailableVersion,
 		UpdatesReleaseURL:       updatesStatus.AvailableReleaseURL,
+		UpdatesLastCheckedAt:    formatUpdatesCheckedAt(updatesStatus.LastCheckedAt),
 		UpdatesLastCheckError:   updatesStatus.LastCheckError,
 		UpdatesLastInstallError: updatesStatus.LastInstallError,
 		Message:                 message,

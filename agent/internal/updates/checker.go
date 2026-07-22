@@ -156,10 +156,43 @@ func (c *Checker) doCheck(ctx context.Context) (CheckResult, Release, Manifest, 
 	if strings.TrimSpace(c.InstalledVersion) == "" {
 		return CheckResult{}, Release{}, Manifest{}, fmt.Errorf("installed version is required")
 	}
+	// Development/local builds (e.g. a "git describe --dirty" version like
+	// "v0.1.9-dirty") are never a strict stable release tag, so they can
+	// never be safely compared against a published release. Rather than
+	// refusing to check at all, treat any installed version that isn't a
+	// comparable stable release as always wanting the latest available
+	// release: skip the version-gate below and always report the latest
+	// verified release as available.
+	_, err := ParseStableVersion(c.InstalledVersion)
+	installedIsStable := err == nil
 
 	release, err := c.GitHub.LatestRelease(ctx)
 	if err != nil {
 		return CheckResult{}, Release{}, Manifest{}, fmt.Errorf("fetch latest release: %w", err)
+	}
+
+	if installedIsStable {
+		// Compare the release tag against the installed version before
+		// ever fetching the manifest/signature. This avoids surfacing a
+		// confusing "release has no manifest asset" error when the latest
+		// published release simply isn't newer than what's already
+		// installed (e.g. an older release published before manifest
+		// signing was added): in that case there's nothing to install, so
+		// a missing/unverifiable manifest on that release is irrelevant.
+		// Both versions are already confirmed stable release tags
+		// above/by LatestRelease, so this cannot fail.
+		newer, err := IsNewerStableVersion(release.TagName, c.InstalledVersion)
+		if err != nil {
+			return CheckResult{}, Release{}, Manifest{}, fmt.Errorf("compare versions: %w", err)
+		}
+		if !newer {
+			return CheckResult{
+				UpToDate:         true,
+				InstalledVersion: c.InstalledVersion,
+				AvailableVersion: release.TagName,
+				ReleaseURL:       release.HTMLURL,
+			}, release, Manifest{}, nil
+		}
 	}
 
 	manifestAsset, ok := release.AssetByName(manifestAssetName)
@@ -195,13 +228,12 @@ func (c *Checker) doCheck(ctx context.Context) (CheckResult, Release, Manifest, 
 		return CheckResult{}, Release{}, Manifest{}, fmt.Errorf("release %s has no artifact for %s/%s", manifest.Version, c.goos(), c.goarch())
 	}
 
-	newer, err := IsNewerStableVersion(manifest.Version, c.InstalledVersion)
-	if err != nil {
-		return CheckResult{}, Release{}, Manifest{}, fmt.Errorf("compare versions: %w", err)
-	}
-
+	// Reaching here means either the release was confirmed newer than a
+	// stable installed version above, or the installed version isn't
+	// stable at all (in which case the latest verified release is always
+	// reported as available) — so this is always a genuine update.
 	result := CheckResult{
-		UpToDate:         !newer,
+		UpToDate:         false,
 		InstalledVersion: c.InstalledVersion,
 		AvailableVersion: manifest.Version,
 		ReleaseURL:       release.HTMLURL,
