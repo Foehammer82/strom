@@ -131,10 +131,8 @@ func TestStoreUpsertAndListNodes(t *testing.T) {
 			Name:   "ups-a",
 			Driver: "usbhid-ups",
 			Metadata: UPSMetadata{
-				DisplayName:     "Office UPS",
-				LoadDescription: "Workstation and monitor",
-				LocationLabel:   "Office",
-				Tags:            []string{"work", "primary"},
+				DisplayName: "Office UPS",
+				Tags:        []string{"work", "primary"},
 			},
 			Variables: map[string]string{
 				"battery.charge": "100",
@@ -215,7 +213,7 @@ func TestStoreUpsertAndListNodes(t *testing.T) {
 	if detail.Name != "ups-a" || detail.Driver != "usbhid-ups" {
 		t.Fatalf("detail = %#v, want ups-a/usbhid-ups", detail)
 	}
-	if detail.Metadata.DisplayName != "Office UPS" || detail.Metadata.LoadDescription != "Workstation and monitor" || detail.Metadata.LocationLabel != "Office" || len(detail.Metadata.Tags) != 2 {
+	if detail.Metadata.DisplayName != "Office UPS" || len(detail.Metadata.Tags) != 2 {
 		t.Fatalf("metadata = %#v, want preserved friendly UPS details", detail.Metadata)
 	}
 	if got := detail.Variables["battery.charge"]; got != "95" {

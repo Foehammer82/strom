@@ -1728,10 +1728,7 @@ func newInProcessAgentNode(t *testing.T) *inProcessAgentNode {
 	reloader := &noopReloader{}
 	adopted := &adoptedRecorder{}
 	adoptionPath := filepath.Join(tempDir, "adoption.json")
-	agentBinaryPath := filepath.Join(tempDir, "strom-agent")
-	if err := os.WriteFile(agentBinaryPath, []byte("original-agent-binary"), 0o755); err != nil {
-		t.Fatalf("write test agent binary: %v", err)
-	}
+	updatesRoot := filepath.Join(tempDir, "agent-updates")
 	tlsCertPath := filepath.Join(tempDir, "node-api.crt")
 	tlsKeyPath := filepath.Join(tempDir, "node-api.key")
 	adopter := &nodeapi.RuntimeAdopter{
@@ -1752,7 +1749,7 @@ func newInProcessAgentNode(t *testing.T) *inProcessAgentNode {
 		RootPath:     tempDir,
 		AdoptionPath: adoptionPath,
 		AuthPath:     filepath.Join(tempDir, "webui-auth.json"),
-		AgentBinary:  agentBinaryPath,
+		UpdatesRoot:  updatesRoot,
 		Adopter:      adopter,
 	})
 	httpServer := &http.Server{Handler: service.Handler()}
@@ -1771,7 +1768,7 @@ func newInProcessAgentNode(t *testing.T) *inProcessAgentNode {
 		tlsPort:      tlsPort,
 		configDir:    configDir,
 		adoptionPath: adoptionPath,
-		agentBinary:  agentBinaryPath,
+		agentBinary:  filepath.Join(updatesRoot, "current"),
 		httpServer:   httpServer,
 		tlsServer:    tlsServer,
 		reloader:     reloader,

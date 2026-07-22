@@ -53,6 +53,9 @@ On an uninitialized node, opening `/` redirects to `/auth/bootstrap`, where the 
 | `POST /adopt` | Pending controller | Stores controller trust material and credentials during one-time adoption. Re-adoption is rejected. |
 | `POST /api/settings/ui/policy` | Controller | Applies controller-managed local UI policy. Body: `{"managed":true,"enabled":true}`. |
 | `POST /api/agent/update` | Controller | Applies a controller-signed agent update. Body includes `version`, `binary_base64`, `sha256`, and `signature_base64`; success reports `restart_required=true`. |
+| `GET /api/agent/updates/status` | Local admin, read/write key | Reports the installed version, any pending activation, and the last checked/available GitHub release. |
+| `POST /api/agent/updates/check` | Local admin, write key | Polls GitHub releases for a newer signed manifest and reports the result; does not install anything. |
+| `POST /api/agent/updates/install` | Local admin, write key | Downloads, verifies, and stages a specific signed release version, then restarts the agent to activate it. Body: `{"version":"vX.Y.Z"}`. |
 
 The diagnostics endpoints are the first place to investigate a USB UPS that does not appear in the dashboard: an entry in `lsusb` but not `nut-scanner` points to NUT driver support or scanner behavior, while scanner output with no generated `ups.conf` points to agent configuration/reload behavior.
 
@@ -81,6 +84,16 @@ The node then returns to pending adoption and local web bootstrap state.
 When OTA updates are applied successfully, the node reports `restart_required=true` so operations can restart `strom-agent` to run the new binary.
 
 For local UI and API development away from Pi hardware, run `go run ./agent/cmd/agent --dev-ui --listen :8080` from WSL or another Linux environment. That mode serves sample data and skips hotplug, scanner, and system service integration.
+
+## Standalone Signed Updates
+
+A node with no adopting controller can still check for and install software updates on its own, by polling GitHub releases for the `strom` repository. This is independent of the controller-driven `POST /api/agent/update` OTA route above, and does not require adoption.
+
+- A daily `strom-update-check.timer` (`systemd`, notify-only, randomized up to 6 hours) runs `strom-agent update check`, which fetches the newest stable GitHub release, verifies its manifest's Ed25519 signature against a public key built into the agent binary, and records the result for the dashboard's "Software updates" section. No update is installed automatically.
+- An operator installs an available update from the node dashboard's Settings page, or by running `strom-agent update install <version>`. The agent downloads the matching release archive, verifies both the manifest signature and the archive/binary checksums, and stages the new binary under `/var/lib/strom/agent/<version>/` before atomically repointing the `current` symlink and restarting.
+- `/usr/local/bin/strom-agent` is a small launcher script, not the agent binary itself: it execs whichever release the `current` symlink points to, falling back to a read-only recovery copy of the agent at `/usr/local/libexec/strom-agent-recovery` if the active release is missing or not executable. This means a corrupted or broken update can never leave a node with no working agent binary to boot into.
+- After activating a new release, the agent polls its own `/healthz` for up to two minutes. If it does not become healthy in that window, the next restart automatically rolls back the `current` symlink to the previously installed release.
+- Release manifests (`strom-agent-manifest.json` + detached `strom-agent-manifest.json.sig`) are generated and signed by `strom release agent`/`strom release sign-manifest` in CI, using a private key stored only as the `STROM_RELEASE_SIGNING_KEY_PEM` repository secret; the release workflow refuses to publish if that secret is missing. See `CONTRIBUTING.md` for the signing-key generation and rotation procedure.
 
 ## Discovery Advertisement
 

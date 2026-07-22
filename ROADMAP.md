@@ -368,6 +368,47 @@ controller, verify the generated certificate fingerprint, complete browser
 trust once, and retain HTTPS across restart; supplied certificates work
 without weakening the existing controller-to-node trust channel.
 
+## Phase 5.8 - Standalone signed node updates
+
+Goal: let a standalone node agent (with no adopting controller) check for and
+apply signed software updates published as GitHub releases, without requiring
+any controller involvement. The verified-installer mechanism built here is
+intended to be reused later by the controller for fleet-wide update
+distribution, but that controller-side work is explicitly out of scope for
+this phase.
+
+- [x] Add an `agent/internal/updates` package: signed manifest parsing,
+      Ed25519 signature verification, GitHub release polling, atomic
+      download/verify/activate/rollback via a `current` symlink under
+      `/var/lib/strom/agent`, and startup health confirmation
+- [x] Wire the update checker/store into the agent process: CLI
+      (`strom-agent update check`), startup reconciliation of a pending
+      activation, and post-restart health confirmation with automatic
+      rollback if the new release fails to become healthy
+- [x] Add `/api/agent/updates/status`, `/check`, and `/install` endpoints
+      (read/write API key and session auth, consistent with other settings
+      endpoints) and a "Software updates" section in the node dashboard
+      settings page
+- [x] Split node deployment into a stable launcher (`/usr/local/bin/strom-agent`)
+      that execs the active release symlink or falls back to a recovery copy
+      of the agent binary, so a bad update can never leave a node unbootable
+- [x] Add a `strom-update-check.timer`/`.service` (daily, notify-only, no
+      auto-install) and wire the launcher/recovery split and timer into
+      `deploy/install.sh` and the node image build
+- [x] Extend the `strom` release tooling to generate a signed update manifest
+      (`strom-agent-manifest.json` + detached Ed25519 `.sig`) alongside the
+      existing release tarballs, and publish both as release assets signed in
+      CI from a repository secret
+- [ ] Document the update mechanism, the launcher/recovery split, and the
+      `STROM_RELEASE_SIGNING_KEY_PEM` secret/signing workflow for operators
+      and contributors
+
+**Exit criteria**: a standalone node with no adopting controller can detect,
+download, verify, and install a signed release update from GitHub, survives a
+failed update via automatic rollback to the previous working release, and the
+release pipeline fails closed (refuses to publish) if the signing key is
+unavailable.
+
 ## Phase 6 - Alerting expansion
 
 Goal: evolve the standalone node beyond baseline alert events into a full

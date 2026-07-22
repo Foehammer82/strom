@@ -75,10 +75,8 @@ type UPSSnapshot struct {
 }
 
 type UPSMetadata struct {
-	DisplayName     string   `json:"display_name"`
-	LoadDescription string   `json:"load_description"`
-	LocationLabel   string   `json:"location_label"`
-	Tags            []string `json:"tags"`
+	DisplayName string   `json:"display_name"`
+	Tags        []string `json:"tags"`
 }
 
 type UPSLatestSample struct {
@@ -230,6 +228,18 @@ func applySchema(db *sql.DB) error {
 	} {
 		if _, err := db.Exec(statement); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return fmt.Errorf("apply node schema migration: %w", err)
+		}
+	}
+	for _, statement := range []string{
+		// load_description and location_label were removed from the ups table;
+		// these drop the columns on databases created before the removal. Fresh
+		// databases never had the columns (schema.sql no longer defines them),
+		// so "no such column" is expected and ignored there.
+		`ALTER TABLE ups DROP COLUMN load_description`,
+		`ALTER TABLE ups DROP COLUMN location_label`,
+	} {
+		if _, err := db.Exec(statement); err != nil && !strings.Contains(strings.ToLower(err.Error()), "no such column") {
+			return fmt.Errorf("apply ups schema migration: %w", err)
 		}
 	}
 	if err := migrateAlertEventsDropCascade(db); err != nil {
@@ -555,13 +565,13 @@ func (s *Store) RecordUPSSnapshots(ctx context.Context, nodeID string, capturedA
 		upsID := nodeID + ":" + upsName
 		activeIDs = append(activeIDs, upsID)
 		if _, err = tx.ExecContext(ctx, `
-			INSERT INTO ups (id, node_id, name, driver, display_name, load_description, location_label, tags_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO ups (id, node_id, name, driver, display_name, tags_json)
+			VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				node_id = excluded.node_id,
 				name = excluded.name,
 				driver = excluded.driver
-		`, upsID, nodeID, upsName, strings.TrimSpace(snapshot.Driver), snapshot.Metadata.DisplayName, snapshot.Metadata.LoadDescription, snapshot.Metadata.LocationLabel, encodeUPSTags(snapshot.Metadata.Tags)); err != nil {
+		`, upsID, nodeID, upsName, strings.TrimSpace(snapshot.Driver), snapshot.Metadata.DisplayName, encodeUPSTags(snapshot.Metadata.Tags)); err != nil {
 			return fmt.Errorf("upsert ups %s: %w", upsID, err)
 		}
 
@@ -605,9 +615,9 @@ func (s *Store) RecordUPSSnapshots(ctx context.Context, nodeID string, capturedA
 func (s *Store) UpdateUPSMetadata(ctx context.Context, nodeID, upsName string, metadata UPSMetadata) error {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE ups
-		SET display_name = ?, load_description = ?, location_label = ?, tags_json = ?
+		SET display_name = ?, tags_json = ?
 		WHERE node_id = ? AND name = ?
-	`, metadata.DisplayName, metadata.LoadDescription, metadata.LocationLabel, encodeUPSTags(metadata.Tags), nodeID, upsName)
+	`, metadata.DisplayName, encodeUPSTags(metadata.Tags), nodeID, upsName)
 	if err != nil {
 		return fmt.Errorf("update UPS metadata %s/%s: %w", nodeID, upsName, err)
 	}
@@ -917,7 +927,7 @@ func (s *Store) SaveControllerSettings(ctx context.Context, settings ControllerS
 
 func (s *Store) ListNodeUPSSummaries(ctx context.Context, nodeID string) ([]UPSLatestSample, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.name, u.driver, u.display_name, u.load_description, u.location_label, u.tags_json, latest.variable, latest.value, latest.captured_at
+		SELECT u.id, u.name, u.driver, u.display_name, u.tags_json, latest.variable, latest.value, latest.captured_at
 		FROM ups u
 		LEFT JOIN (
 			SELECT s1.ups_id, s1.variable, s1.value, s1.captured_at
@@ -954,7 +964,7 @@ func (s *Store) ListNodeUPSSummaries(ctx context.Context, nodeID string) ([]UPSL
 		var variable sql.NullString
 		var value sql.NullString
 		var capturedAt sql.NullString
-		if err := rows.Scan(&upsID, &name, &driver, &metadata.DisplayName, &metadata.LoadDescription, &metadata.LocationLabel, &tagsJSON, &variable, &value, &capturedAt); err != nil {
+		if err := rows.Scan(&upsID, &name, &driver, &metadata.DisplayName, &tagsJSON, &variable, &value, &capturedAt); err != nil {
 			return nil, fmt.Errorf("scan UPS summary row: %w", err)
 		}
 		if err := decodeUPSTags(tagsJSON, &metadata.Tags); err != nil {
@@ -993,14 +1003,14 @@ func (s *Store) ListNodeUPSSummaries(ctx context.Context, nodeID string) ([]UPSL
 
 func (s *Store) GetUPSDetail(ctx context.Context, nodeID, upsName string) (UPSDetail, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.name, u.driver, u.display_name, u.load_description, u.location_label, u.tags_json
+		SELECT u.id, u.name, u.driver, u.display_name, u.tags_json
 		FROM ups u
 		WHERE u.node_id = ? AND u.name = ?
 	`, nodeID, upsName)
 	var upsID string
 	var detail UPSDetail
 	var tagsJSON string
-	if err := row.Scan(&upsID, &detail.Name, &detail.Driver, &detail.Metadata.DisplayName, &detail.Metadata.LoadDescription, &detail.Metadata.LocationLabel, &tagsJSON); err != nil {
+	if err := row.Scan(&upsID, &detail.Name, &detail.Driver, &detail.Metadata.DisplayName, &tagsJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return UPSDetail{}, ErrUPSNotFound
 		}

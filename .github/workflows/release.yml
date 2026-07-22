@@ -71,6 +71,16 @@ jobs:
           uv run strom release agent --version ${{ inputs.version || github.ref_name }}
           uv run strom image node --version ${{ inputs.version || github.ref_name }}
 
+      - name: Sign release manifest
+        env:
+          STROM_RELEASE_SIGNING_KEY_PEM: ${{ secrets.STROM_RELEASE_SIGNING_KEY_PEM }}
+        run: |
+          if [ -z "$STROM_RELEASE_SIGNING_KEY_PEM" ]; then
+            echo "STROM_RELEASE_SIGNING_KEY_PEM secret is not set; refusing to publish an unsigned update manifest" >&2
+            exit 1
+          fi
+          uv run strom release sign-manifest
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -90,6 +100,7 @@ jobs:
             | `strom-agent-${{ inputs.version || github.ref_name }}-linux-arm64.tar.gz` | Standalone agent binary + systemd/udev install assets (arm64, e.g. Pi Zero 2 W, Pi 4/5). |
             | `strom-agent-${{ inputs.version || github.ref_name }}-linux-armv6.tar.gz` | Standalone agent binary + systemd/udev install assets (armv6 fallback). |
             | `SHA256SUMS` | Checksums for the two agent archives above. |
+            | `strom-agent-manifest.json` / `.sig` | Signed manifest consumed by the agent's standalone GitHub-based update checker; do not remove from a published release. |
 
             ## Container images
 
@@ -98,6 +109,8 @@ jobs:
           files: |
             dist/release/*.tar.gz
             dist/release/SHA256SUMS
+            dist/release/strom-agent-manifest.json
+            dist/release/strom-agent-manifest.json.sig
             dist/*.img.xz
             dist/*.img.xz.sha256
 

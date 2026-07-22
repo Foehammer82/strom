@@ -174,8 +174,11 @@ else
 	QEMU_PATH_PREFIX=$PATH
 fi
 
-install -D -m 0755 "$AGENT_SOURCE" "$STAGE_DIR/01-agent/files/usr/local/bin/strom-agent"
+install -D -m 0755 "$AGENT_SOURCE" "$STAGE_DIR/01-agent/files/usr/local/libexec/strom-agent-recovery"
+install -D -m 0755 "$REPO_ROOT/deploy/strom-agent-launcher.sh" "$STAGE_DIR/01-agent/files/usr/local/bin/strom-agent"
 install -D -m 0644 "$REPO_ROOT/deploy/strom-agent.service" "$STAGE_DIR/01-agent/files/etc/systemd/system/strom-agent.service"
+install -D -m 0644 "$REPO_ROOT/deploy/strom-update-check.service" "$STAGE_DIR/01-agent/files/etc/systemd/system/strom-update-check.service"
+install -D -m 0644 "$REPO_ROOT/deploy/strom-update-check.timer" "$STAGE_DIR/01-agent/files/etc/systemd/system/strom-update-check.timer"
 install -D -m 0644 "$REPO_ROOT/deploy/99-strom-agent.rules" "$STAGE_DIR/01-agent/files/etc/udev/rules.d/99-strom-agent.rules"
 
 touch "$PI_GEN_DIR/stage2/SKIP_IMAGES"

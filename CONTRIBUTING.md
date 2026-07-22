@@ -83,6 +83,16 @@ Release tags are created by CI, not by hand-pushing tags from a workstation. Do 
 
 If you are validating release behavior, prefer an `-rcN` tag first, then promote to a stable tag only after the artifacts and smoke checks look correct.
 
+### Signed Node Update Manifests
+
+Standalone nodes (with no adopting controller) verify GitHub release updates against an Ed25519-signed manifest, independent of the controller-driven OTA route. `release.yml` builds and signs this manifest as part of every release; the signing step fails the workflow if the key is unavailable, so no unsigned manifest can be published.
+
+- The signing private key is stored only as the `STROM_RELEASE_SIGNING_KEY_PEM` repository secret (a PEM-encoded Ed25519 private key). It is never committed to the repository or embedded in any build artifact.
+- The corresponding public key is embedded in the agent binary as `defaultReleasePublicKeyHex` in `agent/internal/updates/checker.go`. Changing the signing key requires updating that constant in the same change that rotates the secret, otherwise agents already in the field cannot verify newly signed releases.
+- To generate a new keypair, run `uv run strom release generate-signing-key`. Store the printed private key PEM as the `STROM_RELEASE_SIGNING_KEY_PEM` secret and update `defaultReleasePublicKeyHex` with the printed public key hex.
+- To build and sign a manifest locally (for validation only, never for a real release), run `uv run strom release agent --version <tag>` followed by `STROM_RELEASE_SIGNING_KEY_PEM="$(cat key.pem)" uv run strom release sign-manifest`.
+- Rotating the signing key is a breaking change for any node that has not yet updated past the last release signed with the old key: plan rotations around a stable release that ships the new public key before retiring the old private key.
+
 ## Project Links
 
 - [README.md](README.md) for the project overview and current capabilities

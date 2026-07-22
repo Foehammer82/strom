@@ -14,7 +14,7 @@ func TestUPSMetadataRoundTripIsDeterministic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ups-metadata.json")
 	metadata := map[string]upsMetadata{
 		"ups-b": {DisplayName: "Network UPS", Tags: []string{"Critical", "network", "NETWORK"}},
-		"ups-a": {LoadDescription: "NAS and switch", LocationLabel: "Rack 1"},
+		"ups-a": {DisplayName: "NAS UPS"},
 	}
 	changed, err := saveUPSMetadata(path, metadata)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestUPSMetadataRoundTripIsDeterministic(t *testing.T) {
 	}
 	want := map[string]upsMetadata{
 		"ups-b": {DisplayName: "Network UPS", Tags: []string{"Critical", "network"}},
-		"ups-a": {LoadDescription: "NAS and switch", LocationLabel: "Rack 1"},
+		"ups-a": {DisplayName: "NAS UPS"},
 	}
 	if !reflect.DeepEqual(loaded, want) {
 		t.Fatalf("loaded metadata = %#v, want %#v", loaded, want)
@@ -75,7 +75,7 @@ func TestNormalizeUPSMetadataRejectsInvalidValues(t *testing.T) {
 
 	for _, metadata := range []upsMetadata{
 		{DisplayName: strings.Repeat("a", maxUPSMetadataText+1)},
-		{LoadDescription: "NAS\nSwitch"},
+		{DisplayName: "NAS\nSwitch"},
 		{Tags: make([]string, maxUPSMetadataTags+1)},
 	} {
 		if _, err := normalizeUPSMetadata(metadata); err == nil {

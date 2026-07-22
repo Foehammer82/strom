@@ -1,0 +1,8 @@
+[Unit]
+Description=Check for a signed Strom agent release update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/strom-agent update check

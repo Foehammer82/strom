@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/Foehammer82/strom/agent/internal/nutconf"
+	"github.com/Foehammer82/strom/agent/internal/updates"
 	swguiV5 "github.com/swaggest/swgui/v5emb"
 )
 
@@ -38,10 +39,12 @@ const (
 	defaultCPUTempPath = "/sys/class/thermal/thermal_zone0/temp"
 	defaultRootPath    = "/"
 	defaultUPSCPath    = "upsc"
-	defaultAgentBinary = "/usr/local/bin/strom-agent"
 	csrfCookieName     = "strom_csrf"
 	startingStatus     = "starting"
 	unknownStatus      = "unknown"
+	// agentSystemdUnit is the systemd unit restarted after a standalone
+	// update install so the newly activated release takes effect.
+	agentSystemdUnit = "strom-agent.service"
 )
 
 type commandRunner interface {
@@ -68,11 +71,16 @@ type Options struct {
 	DisableAuth     bool
 	AuthPath        string
 	UPSMetadataPath string
-	AgentBinary     string
-	NUTUser         string
-	NUTPassword     string
-	Adopter         adoptionHandler
-	SSHAccess       sshAccessManager
+	// UpdatesRoot is the persistent directory used for durable agent release
+	// slots (see internal/updates.Store). Empty uses the package default.
+	UpdatesRoot string
+	// UpdatesChecker enables the standalone GitHub-based update check/install
+	// API endpoints when non-nil. Nil disables them (they respond 404).
+	UpdatesChecker *updates.Checker
+	NUTUser        string
+	NUTPassword    string
+	Adopter        adoptionHandler
+	SSHAccess      sshAccessManager
 }
 
 type adoptionHandler interface {
@@ -92,7 +100,8 @@ type Service struct {
 	rootPath        string
 	adoptionPath    string
 	upsMetadataPath string
-	agentBinary     string
+	updatesStore    *updates.Store
+	updatesChecker  *updates.Checker
 	nutUser         string
 	nutPassword     string
 	auth            *authManager
@@ -217,6 +226,29 @@ type otaUpdateResponse struct {
 	Status          string `json:"status"`
 	Version         string `json:"version"`
 	SHA256          string `json:"sha256"`
+	RestartRequired bool   `json:"restart_required"`
+}
+
+type updatesStatusResponse struct {
+	InstalledVersion    string `json:"installed_version"`
+	PendingVersion      string `json:"pending_version,omitempty"`
+	UpdatesSupported    bool   `json:"updates_supported"`
+	SchedulerEnabled    bool   `json:"scheduler_enabled"`
+	LastCheckedAt       string `json:"last_checked_at,omitempty"`
+	LastCheckError      string `json:"last_check_error,omitempty"`
+	AvailableVersion    string `json:"available_version,omitempty"`
+	AvailableReleaseURL string `json:"available_release_url,omitempty"`
+	LastInstallAt       string `json:"last_install_at,omitempty"`
+	LastInstallError    string `json:"last_install_error,omitempty"`
+}
+
+type updatesInstallRequest struct {
+	Version string `json:"version"`
+}
+
+type updatesInstallResponse struct {
+	Status          string `json:"status"`
+	Version         string `json:"version"`
 	RestartRequired bool   `json:"restart_required"`
 }
 
@@ -402,6 +434,11 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 		<section class="surface hero">
 			<div class="section-head">
 				<h2>Node overview</h2>
+				<div class="footer-links">
+					<a class="footer-link" href="/status" target="_blank" rel="noreferrer"><span>Public status</span><svg class="external-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
+					<a class="footer-link" href="/status/details" target="_blank" rel="noreferrer"><span>Detailed JSON</span><svg class="external-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
+					<a class="footer-link" href="/healthz" target="_blank" rel="noreferrer"><span>Health payload</span><svg class="external-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
+				</div>
 			</div>
 			<div id="metrics-grid" class="summary-grid">
 				<article class="metric-card"><span class="eyebrow">Version</span><div class="metric-value">{{.Health.Version}}</div></article>
@@ -471,10 +508,11 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 	</div>
 	<div id="raw-json-modal" class="modal" aria-hidden="true">
 		<div class="surface modal-card modal-card--wide">
-			<span class="eyebrow">Raw variables</span>
-			<h2 id="raw-json-title">Raw NUT variables</h2>
-			<p id="raw-json-subtitle" class="helper"></p>
-			<div class="json-card"><pre id="raw-json-content"></pre></div>
+			<div class="raw-json-head">
+				<h2 id="raw-json-title">Raw NUT variables</h2>
+				<span id="raw-json-name-badge" class="chip"></span>
+			</div>
+			<div class="json-card"><pre id="raw-json-content"><code id="raw-json-code"></code></pre></div>
 			<div class="modal-actions">
 				<button id="raw-json-copy" class="button button--ghost" type="button">Copy JSON</button>
 				<button id="raw-json-close" class="button button--ghost" type="button">Close</button>
@@ -489,10 +527,6 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 			<form id="ups-metadata-form" class="metadata-form">
 				<label for="ups-metadata-display-name">Friendly name</label>
 				<input id="ups-metadata-display-name" name="display_name" maxlength="120" autocomplete="off">
-				<label for="ups-metadata-load-description">What it powers</label>
-				<input id="ups-metadata-load-description" name="load_description" maxlength="120" autocomplete="off">
-				<label for="ups-metadata-location">Location</label>
-				<input id="ups-metadata-location" name="location_label" maxlength="120" autocomplete="off">
 				<label for="ups-metadata-tags">Tags</label>
 				<input id="ups-metadata-tags" name="tags" maxlength="120" autocomplete="off" aria-describedby="ups-metadata-tags-help">
 				<p id="ups-metadata-tags-help" class="helper">Separate tags with commas.</p>
@@ -644,7 +678,8 @@ func New(logger *log.Logger, opts Options) *Service {
 		rootPath:        rootPath,
 		adoptionPath:    opts.AdoptionPath,
 		upsMetadataPath: opts.UPSMetadataPath,
-		agentBinary:     strings.TrimSpace(opts.AgentBinary),
+		updatesStore:    updates.NewStore(opts.UpdatesRoot),
+		updatesChecker:  opts.UpdatesChecker,
 		nutUser:         opts.NUTUser,
 		nutPassword:     opts.NUTPassword,
 		auth:            newAuthManager(opts.DisableAuth, opts.AuthPath, logger),
@@ -712,6 +747,9 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("/settings/api-docs", s.handleAPIDocsSetting)
 	mux.HandleFunc("/api/settings/ui/policy", s.handleUIPolicy)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
+	mux.HandleFunc("/api/agent/updates/status", s.handleUpdatesStatus)
+	mux.HandleFunc("/api/agent/updates/check", s.handleUpdatesCheck)
+	mux.HandleFunc("/api/agent/updates/install", s.handleUpdatesInstall)
 	mux.HandleFunc("/api/docs", s.handleAPIDocsRedirect)
 	mux.HandleFunc("/api/docs/", s.handleAPIDocs)
 	mux.HandleFunc("/openapi.json", s.handleOpenAPISpecification)
@@ -1100,18 +1138,26 @@ func (s *Service) buildSettingsViewModel(r *http.Request, username, message, err
 	if err != nil {
 		return settingsViewModel{}, err
 	}
+	updatesStatus := s.buildUpdatesStatusResponse()
 	return settingsViewModel{
-		Username:          username,
-		UIEnabled:         uiEnabled,
-		UIManaged:         uiManaged,
-		SSHEnabled:        sshEnabled,
-		SSHCommand:        sshCommandForRequest(r),
-		ReadAPIKeyExists:  readAPIKeyExists,
-		WriteAPIKeyExists: writeAPIKeyExists,
-		APIDocsEnabled:    apiDocsEnabled,
-		Message:           message,
-		Error:             errMessage,
-		CSRFToken:         csrfToken,
+		Username:                username,
+		UIEnabled:               uiEnabled,
+		UIManaged:               uiManaged,
+		SSHEnabled:              sshEnabled,
+		SSHCommand:              sshCommandForRequest(r),
+		ReadAPIKeyExists:        readAPIKeyExists,
+		WriteAPIKeyExists:       writeAPIKeyExists,
+		APIDocsEnabled:          apiDocsEnabled,
+		UpdatesSupported:        updatesStatus.UpdatesSupported,
+		InstalledVersion:        updatesStatus.InstalledVersion,
+		UpdatesPendingVersion:   updatesStatus.PendingVersion,
+		UpdatesAvailableVersion: updatesStatus.AvailableVersion,
+		UpdatesReleaseURL:       updatesStatus.AvailableReleaseURL,
+		UpdatesLastCheckError:   updatesStatus.LastCheckError,
+		UpdatesLastInstallError: updatesStatus.LastInstallError,
+		Message:                 message,
+		Error:                   errMessage,
+		CSRFToken:               csrfToken,
 	}, nil
 }
 
@@ -1464,12 +1510,13 @@ func (s *Service) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.replaceAgentBinary(binaryPayload); err != nil {
+	if err := s.updatesStore.StageAndActivate(strings.TrimSpace(request.Version), binaryPayload); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, otaUpdateResponse{Status: "applied", Version: strings.TrimSpace(request.Version), SHA256: strings.ToLower(strings.TrimSpace(request.SHA256)), RestartRequired: true})
+	s.restartAgentAsync()
 }
 
 func verifySignedUpdate(caPEM string, digest, signature []byte) error {
@@ -1494,51 +1541,135 @@ func verifySignedUpdate(caPEM string, digest, signature []byte) error {
 	return nil
 }
 
-func (s *Service) replaceAgentBinary(content []byte) (string, error) {
-	target := strings.TrimSpace(s.agentBinary)
-	if target == "" {
-		executable, err := os.Executable()
-		if err == nil && strings.TrimSpace(executable) != "" {
-			target = executable
+// restartAgentAsync restarts the agent systemd unit shortly after a
+// successful update activation, giving the current HTTP response time to
+// flush before the process is terminated and re-executed by systemd against
+// the newly activated "current" slot. Failures are logged but otherwise
+// ignored: an operator can always restart manually, and the update has
+// already been durably staged regardless.
+func (s *Service) restartAgentAsync() {
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := s.runner.CombinedOutput(ctx, "systemctl", "restart", agentSystemdUnit); err != nil && s.logger != nil {
+			s.logger.Printf("restart %s after update failed: %v", agentSystemdUnit, err)
+		}
+	}()
+}
+
+// buildUpdatesStatusResponse assembles the current standalone update status
+// from the durable store plus this process's own build version.
+func (s *Service) buildUpdatesStatusResponse() updatesStatusResponse {
+	response := updatesStatusResponse{
+		InstalledVersion: s.version,
+		UpdatesSupported: s.updatesChecker != nil,
+	}
+	if s.updatesStore == nil {
+		return response
+	}
+	if pending, ok := s.updatesStore.PendingVersion(); ok {
+		response.PendingVersion = pending
+	}
+	status, err := s.updatesStore.ReadStatus()
+	if err != nil {
+		return response
+	}
+	response.SchedulerEnabled = status.SchedulerEnabled
+	response.AvailableVersion = status.AvailableVersion
+	response.AvailableReleaseURL = status.AvailableReleaseURL
+	response.LastCheckError = status.LastCheckError
+	response.LastInstallError = status.LastInstallError
+	if !status.LastCheckedAt.IsZero() {
+		response.LastCheckedAt = status.LastCheckedAt.Format(time.RFC3339)
+	}
+	if !status.LastInstallAt.IsZero() {
+		response.LastInstallAt = status.LastInstallAt.Format(time.RFC3339)
+	}
+	return response
+}
+
+func (s *Service) handleUpdatesStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.requireReadAccess(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.buildUpdatesStatusResponse())
+}
+
+func (s *Service) handleUpdatesCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
 		}
 	}
-	if target == "" {
-		target = defaultAgentBinary
+	if !s.requireWriteAccess(w, r) {
+		return
 	}
-	resolvedTarget, err := filepath.Abs(target)
+	if s.updatesChecker == nil {
+		writeJSONError(w, http.StatusNotFound, "standalone update checking is not enabled on this node")
+		return
+	}
+	if _, err := s.updatesChecker.Check(r.Context()); err != nil {
+		writeJSONError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.buildUpdatesStatusResponse())
+}
+
+func (s *Service) handleUpdatesInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if wantsHTML(r) {
+		if err := s.validateSessionCSRF(r); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
+	// Installing new software is a sensitive, disruptive action: only an
+	// authenticated node session may trigger it. Unlike read/write API
+	// keys, no local API key can perform an install.
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	if s.updatesChecker == nil {
+		writeJSONError(w, http.StatusNotFound, "standalone update checking is not enabled on this node")
+		return
+	}
+
+	var request updatesInstallRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4*1024))
+	if err := decoder.Decode(&request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode install request: %v", err))
+		return
+	}
+	requestedVersion := strings.TrimSpace(request.Version)
+	if requestedVersion == "" {
+		writeJSONError(w, http.StatusBadRequest, "version is required")
+		return
+	}
+
+	result, err := s.updatesChecker.Install(r.Context(), requestedVersion)
 	if err != nil {
-		return "", fmt.Errorf("resolve agent binary path: %w", err)
+		writeJSONError(w, http.StatusBadGateway, err.Error())
+		return
 	}
-	if err := os.MkdirAll(filepath.Dir(resolvedTarget), 0o755); err != nil {
-		return "", fmt.Errorf("prepare agent binary directory: %w", err)
-	}
-	tempFile, err := os.CreateTemp(filepath.Dir(resolvedTarget), ".strom-agent-ota-*")
-	if err != nil {
-		return "", fmt.Errorf("create temporary OTA file: %w", err)
-	}
-	tempPath := tempFile.Name()
-	defer func() {
-		_ = os.Remove(tempPath)
-	}()
-	if _, err := tempFile.Write(content); err != nil {
-		_ = tempFile.Close()
-		return "", fmt.Errorf("write OTA binary payload: %w", err)
-	}
-	if err := tempFile.Sync(); err != nil {
-		_ = tempFile.Close()
-		return "", fmt.Errorf("sync OTA binary payload: %w", err)
-	}
-	if err := tempFile.Chmod(0o755); err != nil {
-		_ = tempFile.Close()
-		return "", fmt.Errorf("chmod OTA binary payload: %w", err)
-	}
-	if err := tempFile.Close(); err != nil {
-		return "", fmt.Errorf("close OTA temporary file: %w", err)
-	}
-	if err := os.Rename(tempPath, resolvedTarget); err != nil {
-		return "", fmt.Errorf("replace agent binary: %w", err)
-	}
-	return resolvedTarget, nil
+
+	writeJSON(w, http.StatusOK, updatesInstallResponse{Status: "installed", Version: result.Version, RestartRequired: result.RestartRequired})
+	s.restartAgentAsync()
 }
 
 func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -2408,7 +2539,7 @@ func (s *Service) updateUPSMetadata(name string, metadata upsMetadata) (upsMetad
 }
 
 func isEmptyUPSMetadata(metadata upsMetadata) bool {
-	return metadata.DisplayName == "" && metadata.LoadDescription == "" && metadata.LocationLabel == "" && len(metadata.Tags) == 0
+	return metadata.DisplayName == "" && len(metadata.Tags) == 0
 }
 
 func (s *Service) currentNUTUser() string {

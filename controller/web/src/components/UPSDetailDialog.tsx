@@ -44,7 +44,7 @@ export default function UPSDetailDialog({
   const [runtimeHistory, setRuntimeHistory] = useState<Array<{ timestamp: string; value: number }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [metadataEditorOpen, setMetadataEditorOpen] = useState(false);
-  const [metadataForm, setMetadataForm] = useState({ displayName: "", loadDescription: "", locationLabel: "", tags: "" });
+  const [metadataForm, setMetadataForm] = useState({ displayName: "", tags: "" });
   const [savingMetadata, setSavingMetadata] = useState(false);
   // Guards against a slow response for a previous UPS applying its result
   // after the dialog has closed or switched to a different UPS.
@@ -124,8 +124,6 @@ export default function UPSDetailDialog({
     }
     setMetadataForm({
       displayName: detail.metadata.display_name,
-      loadDescription: detail.metadata.load_description,
-      locationLabel: detail.metadata.location_label,
       tags: detail.metadata.tags.join(", "),
     });
     setMetadataEditorOpen(true);
@@ -139,8 +137,6 @@ export default function UPSDetailDialog({
     try {
       const response = await updateUPSMetadata(nodeId, upsName, {
         display_name: metadataForm.displayName.trim(),
-        load_description: metadataForm.loadDescription.trim(),
-        location_label: metadataForm.locationLabel.trim(),
         tags: metadataForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       });
       setDetail((current) => current ? { ...current, metadata: response.metadata } : current);
@@ -210,14 +206,12 @@ export default function UPSDetailDialog({
               ))}
             </Grid>
 
-      {detail.metadata.load_description || detail.metadata.location_label || detail.metadata.tags.length ? (
+      {detail.metadata.tags.length ? (
         <Box sx={{ mb: 2.5 }}>
           <Typography variant="h6" component="h3" sx={{ m: 0 }}>
             UPS details
           </Typography>
           <Stack direction="row" spacing={1.5} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}>
-            {detail.metadata.load_description ? <Typography variant="body2">{detail.metadata.load_description}</Typography> : null}
-            {detail.metadata.location_label ? <Typography variant="body2" color="text.secondary">{detail.metadata.location_label}</Typography> : null}
             {detail.metadata.tags.map((tag) => <Typography key={tag} variant="caption" sx={{ px: 0.75, py: 0.25, border: 1, borderColor: "divider", borderRadius: 1 }}>{tag}</Typography>)}
           </Stack>
         </Box>
@@ -313,9 +307,7 @@ export default function UPSDetailDialog({
       <DialogTitle>Edit UPS details</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
-          <TextField label="Friendly name" value={metadataForm.displayName} onChange={(event) => setMetadataForm((current) => ({ ...current, displayName: event.target.value }))} slotProps={{ htmlInput: { maxLength: 120 } }} autoFocus />
-          <TextField label="What it powers" value={metadataForm.loadDescription} onChange={(event) => setMetadataForm((current) => ({ ...current, loadDescription: event.target.value }))} slotProps={{ htmlInput: { maxLength: 120 } }} />
-          <TextField label="Location" value={metadataForm.locationLabel} onChange={(event) => setMetadataForm((current) => ({ ...current, locationLabel: event.target.value }))} slotProps={{ htmlInput: { maxLength: 120 } }} />
+          <TextField label="Friendly name" value={metadataForm.displayName} onChange={(event) => setMetadataForm((current) => ({ ...current, displayName: event.target.value }))} placeholder={detail?.name ?? upsName ?? ""} slotProps={{ htmlInput: { maxLength: 120 } }} autoFocus />
           <TextField label="Tags" value={metadataForm.tags} onChange={(event) => setMetadataForm((current) => ({ ...current, tags: event.target.value }))} helperText="Separate tags with commas." slotProps={{ htmlInput: { maxLength: 120 } }} />
         </Stack>
       </DialogContent>

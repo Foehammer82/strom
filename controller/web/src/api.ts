@@ -11,8 +11,6 @@ export type UPSummary = {
 
 export type UPSMetadata = {
   display_name: string;
-  load_description: string;
-  location_label: string;
   tags: string[];
 };
 

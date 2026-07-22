@@ -20,6 +20,7 @@ docs = [
   "mkdocs-git-revision-date-localized-plugin>=1.2,<2.0",
 ]
 dev = [
+  "cryptography>=43,<45",
   "pre-commit>=4,<5",
   "pytest>=8,<9",
 ]

@@ -143,6 +143,8 @@ go run ./controller/cmd/controller ota --data-dir /data --node-id <node-id> --bi
 
 The controller signs the binary digest with its CA private key, then pushes the payload to the node's trusted TLS API. The node verifies the signature against the adopted controller CA certificate before replacing its local agent binary.
 
+A standalone node with no adopting controller can also check for and install updates on its own: a daily timer polls GitHub releases for a signed manifest, and an operator can install an available update from the node dashboard or `strom-agent update install <version>`. Updates are verified against an Ed25519 signature before being staged, and a failed update automatically rolls back on the next restart. See [docs/reference/agent.md](docs/reference/agent.md) for details and [CONTRIBUTING.md](CONTRIBUTING.md) for the release-signing-key procedure.
+
 Image build prerequisites and the flash workflow are documented in [image/README.md](image/README.md).
 
 The user-facing documentation set lives in [docs/](docs). If you are looking for setup steps, product capabilities, or operational reference material, start there.

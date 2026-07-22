@@ -26,6 +26,7 @@ import (
 	"github.com/Foehammer82/strom/agent/internal/nutconf"
 	"github.com/Foehammer82/strom/agent/internal/services"
 	"github.com/Foehammer82/strom/agent/internal/sim"
+	"github.com/Foehammer82/strom/agent/internal/updates"
 	"github.com/Foehammer82/strom/agent/nodeapi"
 	"gopkg.in/yaml.v3"
 )
@@ -46,16 +47,19 @@ const (
 var version = "dev"
 
 type config struct {
-	configDir string
-	listen    string
-	tlsListen string
-	logLevel  string
-	devUI     bool
-	demoMode  bool
-	simulate  string
-	nodeID    string
-	httpAuth  bool
-	authPath  string
+	configDir      string
+	listen         string
+	tlsListen      string
+	logLevel       string
+	devUI          bool
+	demoMode       bool
+	simulate       string
+	nodeID         string
+	httpAuth       bool
+	authPath       string
+	updatesEnabled bool
+	updatesRoot    string
+	updatesRepo    string
 }
 
 type hotplugWatcher interface {
@@ -135,6 +139,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "update" {
+		if err := runUpdateCommand(logger, os.Args[2:]); err != nil {
+			logger.Printf("fatal error: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg, err := parseFlags(os.Args[1:])
 	if err != nil {
@@ -170,6 +181,9 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.nodeID, "node-id", "", "optional node identity override for container and simulation replicas")
 	flags.BoolVar(&cfg.httpAuth, "http-auth", true, "require bootstrap and Basic Auth for the node dashboard and detailed status routes")
 	flags.StringVar(&cfg.authPath, "http-auth-file", "/var/lib/strom/webui-auth.json", "path to the node web auth file")
+	flags.BoolVar(&cfg.updatesEnabled, "updates-enabled", true, "enable standalone GitHub-based stable release update checking and installation")
+	flags.StringVar(&cfg.updatesRoot, "updates-root", "", "override the persistent updates root directory (default: built-in)")
+	flags.StringVar(&cfg.updatesRepo, "updates-repo", "", "override the GitHub repository checked for updates (default: built-in)")
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -227,6 +241,53 @@ func runSSHSyncCommand(logger *log.Logger, args []string) error {
 	return nil
 }
 
+func runUpdateCommand(logger *log.Logger, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("update requires a subcommand: check")
+	}
+	switch args[0] {
+	case "check":
+		return runUpdateCheckCommand(logger, args[1:])
+	default:
+		return fmt.Errorf("unknown update subcommand %q", args[0])
+	}
+}
+
+func runUpdateCheckCommand(logger *log.Logger, args []string) error {
+	flags := flag.NewFlagSet("strom-agent update check", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var updatesRoot, repository string
+	flags.StringVar(&updatesRoot, "updates-root", "", "override the persistent updates root directory (default: built-in)")
+	flags.StringVar(&repository, "updates-repo", "", "override the GitHub repository checked for updates (default: built-in)")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	checker := &updates.Checker{
+		Store: updates.NewStore(updatesRoot),
+		GitHub: &updates.GitHubClient{
+			Repository:   repository,
+			AgentVersion: version,
+			HTTPClient:   updates.NewDownloadHTTPClient(60 * time.Second),
+		},
+		InstalledVersion: version,
+	}
+	result, err := checker.Check(context.Background())
+	if err != nil {
+		return fmt.Errorf("check for updates: %w", err)
+	}
+	if result.UpToDate {
+		if logger != nil {
+			logger.Printf("agent is up to date (version %s)", result.InstalledVersion)
+		}
+		return nil
+	}
+	if logger != nil {
+		logger.Printf("update available: %s -> %s (%s)", result.InstalledVersion, result.AvailableVersion, result.ReleaseURL)
+	}
+	return nil
+}
+
 func resetNodeState(paths ...string) error {
 	for _, path := range paths {
 		if path == "" {
@@ -243,7 +304,13 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 	if cfg.devUI {
 		return runDevUI(ctx, logger, cfg)
 	}
-
+	updatesStore := updates.NewStore(cfg.updatesRoot)
+	reconcileAction, err := updatesStore.ReconcileStartup(version)
+	if err != nil {
+		logger.Printf("reconcile pending update activation failed: %v", err)
+	} else if reconcileAction == updates.ReconcileRolledBack {
+		return fmt.Errorf("update to %s failed to become healthy and was rolled back to the previous release; exiting so the previous release restarts", version)
+	}
 	if _, err := applyFactoryResetIfRequested(logger, []string{factoryResetMarkerPath, factoryResetLegacyPath}, factoryResetStatePaths(cfg.authPath)); err != nil {
 		return fmt.Errorf("apply factory reset: %w", err)
 	}
@@ -253,7 +320,6 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 
 	override := strings.TrimSpace(cfg.nodeID)
 	var identity discovery.Identity
-	var err error
 	if override != "" {
 		identity = discovery.IdentityForSerial(override)
 	} else {
@@ -288,14 +354,29 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 	}
 	adopter.TLSPort = tlsPort
 
+	var updatesChecker *updates.Checker
+	if cfg.updatesEnabled {
+		updatesChecker = &updates.Checker{
+			Store: updatesStore,
+			GitHub: &updates.GitHubClient{
+				Repository:   cfg.updatesRepo,
+				AgentVersion: version,
+				HTTPClient:   updates.NewDownloadHTTPClient(60 * time.Second),
+			},
+			InstalledVersion: version,
+		}
+	}
+
 	healthAPI := api.New(logger, api.Options{
-		Version:      version,
-		Serial:       identity.Serial,
-		StartedAt:    time.Now(),
-		AdoptionPath: defaultAdoptionPath,
-		DisableAuth:  !cfg.httpAuth,
-		AuthPath:     cfg.authPath,
-		Adopter:      adopter,
+		Version:        version,
+		Serial:         identity.Serial,
+		StartedAt:      time.Now(),
+		AdoptionPath:   defaultAdoptionPath,
+		DisableAuth:    !cfg.httpAuth,
+		AuthPath:       cfg.authPath,
+		Adopter:        adopter,
+		UpdatesRoot:    cfg.updatesRoot,
+		UpdatesChecker: updatesChecker,
 	})
 	httpServer := &http.Server{Handler: healthAPI.Handler()}
 	httpErr := make(chan error, 1)
@@ -304,6 +385,10 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 			httpErr <- err
 		}
 	}()
+
+	if reconcileAction == updates.ReconcileAwaitingHealth {
+		go confirmUpdateHealthy(runCtx, logger, updatesStore, version, listener.Addr().(*net.TCPAddr).Port)
+	}
 
 	tlsErr := make(chan error, 1)
 	var tlsServer *http.Server
@@ -401,6 +486,58 @@ func retryMDNSRegistration(ctx context.Context, logger *log.Logger, retryInterva
 		case <-timer.C:
 		}
 	}
+}
+
+// confirmUpdateHealthy polls the local /healthz endpoint after a pending
+// update activation and, once the node reports healthy, records the update
+// as confirmed so it will not be rolled back on a future restart. If the
+// node never becomes healthy within the confirmation window, it is left
+// pending so the next process restart's ReconcileStartup call can roll it
+// back to the previous release.
+func confirmUpdateHealthy(ctx context.Context, logger *log.Logger, store *updates.Store, myVersion string, port int) {
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/healthz", port)
+	client := &http.Client{Timeout: 5 * time.Second}
+	const pollInterval = 5 * time.Second
+	const confirmationWindow = 2 * time.Minute
+	deadline := time.Now().Add(confirmationWindow)
+
+	timer := time.NewTimer(pollInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+
+		if healthy(client, healthURL) {
+			if err := store.ConfirmHealthy(myVersion); err != nil {
+				if logger != nil {
+					logger.Printf("confirm healthy update to %s failed: %v", myVersion, err)
+				}
+			} else if logger != nil {
+				logger.Printf("confirmed update to %s is healthy", myVersion)
+			}
+			return
+		}
+
+		if time.Now().After(deadline) {
+			if logger != nil {
+				logger.Printf("update to %s did not become healthy within the confirmation window; it will be rolled back on the next restart", myVersion)
+			}
+			return
+		}
+		timer.Reset(pollInterval)
+	}
+}
+
+func healthy(client *http.Client, healthURL string) bool {
+	response, err := client.Get(healthURL)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = response.Body.Close() }()
+	return response.StatusCode == http.StatusOK
 }
 
 func factoryResetStatePaths(authPath string) []string {

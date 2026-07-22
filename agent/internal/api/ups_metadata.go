@@ -19,10 +19,8 @@ const (
 )
 
 type upsMetadata struct {
-	DisplayName     string   `json:"display_name,omitempty"`
-	LoadDescription string   `json:"load_description,omitempty"`
-	LocationLabel   string   `json:"location_label,omitempty"`
-	Tags            []string `json:"tags,omitempty"`
+	DisplayName string   `json:"display_name,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 func loadUPSMetadata(path string) (map[string]upsMetadata, error) {
@@ -75,12 +73,6 @@ func saveUPSMetadata(path string, metadata map[string]upsMetadata) (bool, error)
 func normalizeUPSMetadata(metadata upsMetadata) (upsMetadata, error) {
 	var err error
 	if metadata.DisplayName, err = normalizeUPSMetadataText(metadata.DisplayName, "display name"); err != nil {
-		return upsMetadata{}, err
-	}
-	if metadata.LoadDescription, err = normalizeUPSMetadataText(metadata.LoadDescription, "what it powers"); err != nil {
-		return upsMetadata{}, err
-	}
-	if metadata.LocationLabel, err = normalizeUPSMetadataText(metadata.LocationLabel, "location"); err != nil {
 		return upsMetadata{}, err
 	}
 	if len(metadata.Tags) > maxUPSMetadataTags {

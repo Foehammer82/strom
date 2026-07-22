@@ -38,16 +38,15 @@ const els = {
   confirmSubmit: document.getElementById("confirm-submit"),
   confirmCancel: document.getElementById("confirm-cancel"),
   rawJsonModal: document.getElementById("raw-json-modal"),
-  rawJsonSubtitle: document.getElementById("raw-json-subtitle"),
+  rawJsonNameBadge: document.getElementById("raw-json-name-badge"),
   rawJsonContent: document.getElementById("raw-json-content"),
+  rawJsonCode: document.getElementById("raw-json-code"),
 	  rawJsonCopy: document.getElementById("raw-json-copy"),
   rawJsonClose: document.getElementById("raw-json-close"),
   upsMetadataModal: document.getElementById("ups-metadata-modal"),
   upsMetadataSubtitle: document.getElementById("ups-metadata-subtitle"),
   upsMetadataForm: document.getElementById("ups-metadata-form"),
   upsMetadataDisplayName: document.getElementById("ups-metadata-display-name"),
-  upsMetadataLoadDescription: document.getElementById("ups-metadata-load-description"),
-  upsMetadataLocation: document.getElementById("ups-metadata-location"),
   upsMetadataTags: document.getElementById("ups-metadata-tags"),
   upsMetadataError: document.getElementById("ups-metadata-error"),
   upsMetadataCancel: document.getElementById("ups-metadata-cancel"),
@@ -460,14 +459,12 @@ function renderUPSGrid() {
     const accentClass = chipClass ? `ups-card--${chipClass.replace("chip--", "")}` : "ups-card--good";
 	const metadata = ups.metadata || {};
 	const title = metadata.display_name || ups.name;
-	const context = [metadata.load_description, metadata.location_label].filter(Boolean).join(" · ");
     return `
       <article class="ups-card ${accentClass} ${ups.name === state.selectedUPS ? "is-selected" : ""}" data-ups-name="${escapeAttribute(ups.name)}" tabindex="0">
         <header>
           <div>
             <h3>${escapeHTML(title)}</h3>
             <p>${escapeHTML(ups.driver)}</p>
-      			${context ? `<p class="ups-card-context">${escapeHTML(context)}</p>` : ""}
           </div>
           <span class="chip ${chipClass}">${escapeHTML(ups.status)}</span>
         </header>
@@ -511,7 +508,6 @@ function renderDetail() {
   const metrics = detail.metrics;
   const metadata = detail.metadata || {};
   const title = metadata.display_name || detail.name;
-  const context = [metadata.load_description, metadata.location_label].filter(Boolean).join(" · ");
   els.detail.classList.remove("detail-shell--good", "detail-shell--warn", "detail-shell--danger");
   els.detail.classList.add(accentClassForStatus(detail.status));
   els.detail.innerHTML = `
@@ -527,7 +523,7 @@ function renderDetail() {
         <button type="button" class="button button--ghost button--compact" id="view-raw-json">Raw JSON</button>
       </div>
     </div>
-  	${context || metadata.tags?.length ? `<div class="ups-detail-context">${context ? `<span>${escapeHTML(context)}</span>` : ""}${metadata.tags?.length ? metadata.tags.map((tag) => `<span class="tag">${escapeHTML(tag)}</span>`).join("") : ""}</div>` : ""}
+  	${metadata.tags?.length ? `<div class="ups-detail-context">${metadata.tags.map((tag) => `<span class="tag">${escapeHTML(tag)}</span>`).join("")}</div>` : ""}
 
     <div class="detail-metrics-grid">
       ${detailMetric("Battery charge", formatPercent(metrics.battery_charge_percent))}
@@ -561,13 +557,6 @@ function renderDetail() {
       </div>
       ${renderWritable(detail.writable)}
     </section>
-
-    <div class="footer-links">
-		${renderExternalLink("/status", "Public status")}
-		${renderExternalLink("/status/details", "Detailed JSON")}
-		${renderExternalLink("/healthz", "Health payload")}
-		${renderExternalLink("https://foehammer82.github.io/strom/getting-started/", "Docs")}
-    </div>
   `;
 
   document.getElementById("view-raw-json")?.addEventListener("click", () => {
@@ -743,12 +732,6 @@ function renderVariableGroups(variables) {
   `).join("")}</div>`;
 }
 
-const externalLinkIcon = '<svg class="external-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
-
-function renderExternalLink(href, label) {
-  return `<a class="footer-link" href="${escapeAttribute(href)}" target="_blank" rel="noreferrer"><span>${escapeHTML(label)}</span>${externalLinkIcon}</a>`;
-}
-
 function renderVariableInput(variable) {
   const value = variable.current_value || "";
   if (variable.editor === "select") {
@@ -780,20 +763,44 @@ function closeConfirmModal() {
 }
 
 function openRawJsonModal(detail) {
-  els.rawJsonSubtitle.textContent = `${detail.name} • Updated ${new Date(detail.updated_at).toLocaleTimeString()}`;
-  els.rawJsonContent.textContent = JSON.stringify(detail.variables, null, 2);
+  els.rawJsonNameBadge.textContent = detail.name;
+  els.rawJsonCode.innerHTML = highlightJSON(detail.variables);
   els.rawJsonModal.classList.add("is-open");
   els.rawJsonClose.focus();
 }
 
+// highlightJSON renders a pretty-printed, colorized version of `value` as an
+// HTML string for display inside a <code> element. It escapes only the HTML
+// entities that matter (&, <, >) so the JSON string quote characters remain
+// intact for the token regex below; the result is never used as anything but
+// element content (never re-parsed as HTML from a different trust boundary).
+function highlightJSON(value) {
+  const json = JSON.stringify(value, null, 2)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  const tokenPattern = /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+  return json.replace(tokenPattern, (match, _string, isKey) => {
+    let className = "json-token-number";
+    if (/^"/.test(match)) {
+      className = isKey ? "json-token-key" : "json-token-string";
+    } else if (match === "true" || match === "false") {
+      className = "json-token-boolean";
+    } else if (match === "null") {
+      className = "json-token-null";
+    }
+    return `<span class="${className}">${match}</span>`;
+  });
+}
+
 async function copyRawJSON() {
-  const value = els.rawJsonContent.textContent;
+  const value = els.rawJsonCode.textContent;
   try {
     await navigator.clipboard.writeText(value);
   } catch (_) {
     const selection = window.getSelection();
     const range = document.createRange();
-    range.selectNodeContents(els.rawJsonContent);
+    range.selectNodeContents(els.rawJsonCode);
     selection.removeAllRanges();
     selection.addRange(range);
     document.execCommand("copy");
@@ -810,8 +817,7 @@ function openUPSMetadataModal(detail) {
   const metadata = detail.metadata || {};
   els.upsMetadataSubtitle.textContent = detail.name;
   els.upsMetadataDisplayName.value = metadata.display_name || "";
-  els.upsMetadataLoadDescription.value = metadata.load_description || "";
-  els.upsMetadataLocation.value = metadata.location_label || "";
+  els.upsMetadataDisplayName.placeholder = detail.name;
   els.upsMetadataTags.value = (metadata.tags || []).join(", ");
   els.upsMetadataError.hidden = true;
   els.upsMetadataError.textContent = "";
@@ -830,8 +836,6 @@ async function saveUPSMetadata() {
   const tags = els.upsMetadataTags.value.split(",").map((tag) => tag.trim()).filter(Boolean);
   const metadata = {
     display_name: els.upsMetadataDisplayName.value.trim(),
-    load_description: els.upsMetadataLoadDescription.value.trim(),
-    location_label: els.upsMetadataLocation.value.trim(),
     tags,
   };
   els.upsMetadataSave.disabled = true;

@@ -397,8 +397,6 @@ func TestIndexRendersHTMLDashboard(t *testing.T) {
 		"ups-metadata-modal",
 		"ups-metadata-form",
 		"ups-metadata-display-name",
-		"ups-metadata-load-description",
-		"ups-metadata-location",
 		"ups-metadata-tags",
 		"Save details",
 		"raw-json-copy",
@@ -711,10 +709,7 @@ func TestAgentUpdateRequiresValidControllerSignature(t *testing.T) {
 
 	tempDir := t.TempDir()
 	adoptionPath := filepath.Join(tempDir, "adoption.json")
-	agentBinaryPath := filepath.Join(tempDir, "strom-agent")
-	if err := os.WriteFile(agentBinaryPath, []byte("old-agent"), 0o755); err != nil {
-		t.Fatalf("write initial agent binary: %v", err)
-	}
+	updatesRoot := filepath.Join(tempDir, "updates")
 
 	caPEM, signer := testGenerateControllerCA(t)
 	controllerToken := "controller-token"
@@ -723,7 +718,7 @@ func TestAgentUpdateRequiresValidControllerSignature(t *testing.T) {
 		t.Fatalf("write adoption config: %v", err)
 	}
 
-	service := New(nil, Options{RootPath: tempDir, AuthPath: filepath.Join(tempDir, "webui-auth.json"), AdoptionPath: adoptionPath, AgentBinary: agentBinaryPath})
+	service := New(nil, Options{RootPath: tempDir, AuthPath: filepath.Join(tempDir, "webui-auth.json"), AdoptionPath: adoptionPath, UpdatesRoot: updatesRoot})
 
 	binaryPayload := []byte("new-agent-bytes")
 	digest := sha256.Sum256(binaryPayload)
@@ -750,12 +745,16 @@ func TestAgentUpdateRequiresValidControllerSignature(t *testing.T) {
 		t.Fatalf("good signature status = %d, want %d body=%s", goodRecorder.Code, http.StatusOK, goodRecorder.Body.String())
 	}
 
-	content, err := os.ReadFile(agentBinaryPath)
+	version, ok := service.updatesStore.InstalledVersion()
+	if !ok || version != "v0.4.0" {
+		t.Fatalf("InstalledVersion() = %q, %v; want v0.4.0, true", version, ok)
+	}
+	content, err := os.ReadFile(filepath.Join(updatesRoot, "releases", "v0.4.0", "strom-agent"))
 	if err != nil {
-		t.Fatalf("read updated agent binary: %v", err)
+		t.Fatalf("read staged agent binary: %v", err)
 	}
 	if string(content) != string(binaryPayload) {
-		t.Fatalf("updated agent binary = %q, want %q", string(content), string(binaryPayload))
+		t.Fatalf("staged agent binary = %q, want %q", string(content), string(binaryPayload))
 	}
 }
 

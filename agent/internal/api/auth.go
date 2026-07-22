@@ -109,17 +109,24 @@ type bootstrapViewModel struct {
 }
 
 type settingsViewModel struct {
-	Username          string
-	UIEnabled         bool
-	UIManaged         bool
-	SSHEnabled        bool
-	SSHCommand        string
-	ReadAPIKeyExists  bool
-	WriteAPIKeyExists bool
-	APIDocsEnabled    bool
-	Error             string
-	Message           string
-	CSRFToken         string
+	Username                string
+	UIEnabled               bool
+	UIManaged               bool
+	SSHEnabled              bool
+	SSHCommand              string
+	ReadAPIKeyExists        bool
+	WriteAPIKeyExists       bool
+	APIDocsEnabled          bool
+	UpdatesSupported        bool
+	InstalledVersion        string
+	UpdatesPendingVersion   string
+	UpdatesAvailableVersion string
+	UpdatesReleaseURL       string
+	UpdatesLastCheckError   string
+	UpdatesLastInstallError string
+	Error                   string
+	Message                 string
+	CSRFToken               string
 }
 
 var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
@@ -415,6 +422,24 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 					</div>
 				</section>
 
+				{{if .UpdatesSupported}}
+				<section class="settings-section" id="updates-section">
+					<div class="section-head">
+						<div>
+							<h2>Software updates</h2>
+							<p>Installed version <strong>{{.InstalledVersion}}</strong>.{{if .UpdatesPendingVersion}} Update to {{.UpdatesPendingVersion}} is pending health confirmation.{{end}}</p>
+						</div>
+						<span class="status" id="updates-status-badge">{{if .UpdatesAvailableVersion}}Update available{{else}}Up to date{{end}}</span>
+					</div>
+					{{if .UpdatesAvailableVersion}}<p id="updates-available-message">Version {{.UpdatesAvailableVersion}} is available.{{if .UpdatesReleaseURL}} <a href="{{.UpdatesReleaseURL}}" target="_blank" rel="noreferrer">View release notes</a>{{end}}</p>{{end}}
+					<div id="updates-action-error" class="error dialog-error" role="alert" {{if not .UpdatesLastCheckError}}{{if not .UpdatesLastInstallError}}hidden{{end}}{{end}}>{{if .UpdatesLastInstallError}}{{.UpdatesLastInstallError}}{{else}}{{.UpdatesLastCheckError}}{{end}}</div>
+					<div class="dialog-actions" style="justify-content:flex-start;">
+						<button id="updates-check-button" class="button--secondary" type="button">Check for updates</button>
+						<button id="updates-install-button" type="button" {{if not .UpdatesAvailableVersion}}hidden{{end}}>Install update</button>
+					</div>
+				</section>
+				{{end}}
+
 				<section class="settings-section">
 					<div class="section-head">
 						<div>
@@ -663,6 +688,61 @@ var settingsTemplate = template.Must(template.New("settings").Parse(`<!DOCTYPE h
 				}
 				copySSHCommand.textContent = "Copied";
 				setTimeout(() => { copySSHCommand.textContent = "Copy"; }, 1500);
+			});
+			const updatesCheckButton = document.getElementById("updates-check-button");
+			const updatesInstallButton = document.getElementById("updates-install-button");
+			const updatesStatusBadge = document.getElementById("updates-status-badge");
+			const updatesActionError = document.getElementById("updates-action-error");
+			const updatesAvailableMessage = document.getElementById("updates-available-message");
+			let updatesAvailableVersion = {{printf "%q" .UpdatesAvailableVersion}};
+			const showUpdatesError = (message) => { if (!updatesActionError) return; updatesActionError.textContent = message; updatesActionError.hidden = false; };
+			const clearUpdatesError = () => { if (!updatesActionError) return; updatesActionError.hidden = true; updatesActionError.textContent = ""; };
+			updatesCheckButton?.addEventListener("click", async () => {
+				clearUpdatesError();
+				updatesCheckButton.disabled = true;
+				updatesCheckButton.textContent = "Checking...";
+				try {
+					const response = await fetch("/api/agent/updates/check", { method: "POST", headers: { "X-CSRF-Token": csrfToken } });
+					const payload = await response.json();
+					if (!response.ok) throw new Error(payload.error || "Unable to check for updates");
+					updatesAvailableVersion = payload.available_version || "";
+					if (updatesAvailableVersion) {
+						updatesStatusBadge.textContent = "Update available";
+						updatesInstallButton.hidden = false;
+						if (updatesAvailableMessage) updatesAvailableMessage.textContent = "Version " + updatesAvailableVersion + " is available.";
+					} else {
+						updatesStatusBadge.textContent = "Up to date";
+						updatesInstallButton.hidden = true;
+						if (updatesAvailableMessage) updatesAvailableMessage.textContent = "";
+					}
+				} catch (error) {
+					showUpdatesError(error.message);
+				} finally {
+					updatesCheckButton.disabled = false;
+					updatesCheckButton.textContent = "Check for updates";
+				}
+			});
+			updatesInstallButton?.addEventListener("click", async () => {
+				if (!updatesAvailableVersion) return;
+				if (!confirm("Install version " + updatesAvailableVersion + " now? The agent will restart automatically.")) return;
+				clearUpdatesError();
+				updatesInstallButton.disabled = true;
+				updatesInstallButton.textContent = "Installing...";
+				try {
+					const response = await fetch("/api/agent/updates/install", {
+						method: "POST",
+						headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+						body: JSON.stringify({ version: updatesAvailableVersion }),
+					});
+					const payload = await response.json();
+					if (!response.ok) throw new Error(payload.error || "Unable to install update");
+					updatesStatusBadge.textContent = "Restarting...";
+					updatesInstallButton.hidden = true;
+				} catch (error) {
+					showUpdatesError(error.message);
+					updatesInstallButton.disabled = false;
+					updatesInstallButton.textContent = "Install update";
+				}
 			});
 			document.addEventListener("click", (event) => {
 				if (menu.contains(event.target) || toggles.some((toggle) => toggle.contains(event.target))) return;

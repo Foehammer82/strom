@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -9,6 +10,8 @@ import tarfile
 from pathlib import Path
 
 import typer
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from tools.versioning import compute_next_version, load_train, set_train
 
@@ -22,6 +25,19 @@ UV = os.environ.get("UV", "uv")
 
 AGENT_BIN = "strom-agent"
 CONTROLLER_BIN = "strom-controller"
+
+# Must match agent/internal/updates/manifest.go (ManifestSchemaVersion) and
+# agent/internal/updates/checker.go (manifestAssetName/manifestSignatureAssetName).
+RELEASE_MANIFEST_SCHEMA_VERSION = 1
+RELEASE_MANIFEST_NAME = "strom-agent-manifest.json"
+RELEASE_MANIFEST_SIG_NAME = f"{RELEASE_MANIFEST_NAME}.sig"
+RELEASE_KEY_ID = "strom-release-1"
+
+# (release archive arch suffix) -> (manifest os, manifest arch, manifest goarm)
+RELEASE_ARCH_TARGETS: dict[str, tuple[str, str, str]] = {
+    "linux-arm64": ("linux", "arm64", ""),
+    "linux-armv6": ("linux", "arm", "6"),
+}
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -148,6 +164,63 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def build_release_manifest(version: str, artifacts: list[dict[str, object]]) -> dict[str, object]:
+    """Build the signed release manifest payload.
+
+    Field names and shape must exactly match agent/internal/updates/manifest.go
+    (Manifest/Artifact JSON tags) since the agent parses this document
+    verbatim after verifying its Ed25519 signature.
+    """
+    return {
+        "schema_version": RELEASE_MANIFEST_SCHEMA_VERSION,
+        "version": version,
+        "key_id": RELEASE_KEY_ID,
+        "artifacts": artifacts,
+    }
+
+
+def release_manifest_artifact(
+    *, os_name: str, arch: str, goarm: str, filename: str, size: int, sha256: str, binary_sha256: str
+) -> dict[str, object]:
+    artifact: dict[str, object] = {
+        "os": os_name,
+        "arch": arch,
+        "filename": filename,
+        "size": size,
+        "sha256": sha256,
+        "binary_sha256": binary_sha256,
+    }
+    if goarm:
+        artifact["goarm"] = goarm
+    return artifact
+
+
+def write_release_manifest(version: str, artifacts: list[dict[str, object]]) -> Path:
+    manifest = build_release_manifest(version, artifacts)
+    manifest_path = RELEASE_DIR / RELEASE_MANIFEST_NAME
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest_path
+
+
+def sign_release_manifest(private_key_pem: str) -> Path:
+    """Sign dist/release/strom-agent-manifest.json and write the detached
+    Ed25519 signature (raw 64 bytes, matching Go's ed25519.Sign output) to
+    dist/release/strom-agent-manifest.json.sig.
+    """
+    manifest_path = RELEASE_DIR / RELEASE_MANIFEST_NAME
+    if not manifest_path.exists():
+        raise RuntimeError(f"{manifest_path} does not exist; run `strom release agent` first")
+
+    private_key = serialization.load_pem_private_key(private_key_pem.encode("ascii"), password=None)
+    if not isinstance(private_key, Ed25519PrivateKey):
+        raise RuntimeError("release signing key must be an Ed25519 private key")
+
+    signature = private_key.sign(manifest_path.read_bytes())
+    signature_path = RELEASE_DIR / RELEASE_MANIFEST_SIG_NAME
+    signature_path.write_bytes(signature)
+    return signature_path
+
+
 def release_agent_artifacts(version: str) -> None:
     build_agent_binaries(version)
     if RELEASE_DIR.exists():
@@ -155,20 +228,27 @@ def release_agent_artifacts(version: str) -> None:
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
     checksums: list[str] = []
-    arches = ("linux-arm64", "linux-armv6")
-    for arch in arches:
+    manifest_artifacts: list[dict[str, object]] = []
+    for arch, (os_name, manifest_arch, goarm) in RELEASE_ARCH_TARGETS.items():
         stage_dir = RELEASE_DIR / f"{AGENT_BIN}-{version}-{arch}"
         deploy_dir = stage_dir / "deploy"
         deploy_dir.mkdir(parents=True, exist_ok=True)
 
-        shutil.copy2(DIST_DIR / f"{AGENT_BIN}-{arch}", stage_dir / AGENT_BIN)
+        binary_source = DIST_DIR / f"{AGENT_BIN}-{arch}"
+        binary_sha256 = sha256_file(binary_source)
+        shutil.copy2(binary_source, stage_dir / AGENT_BIN)
         os.chmod(stage_dir / AGENT_BIN, 0o755)
         shutil.copy2(ROOT / "agent" / "README.md", stage_dir / "README.md")
 
         install_script = deploy_dir / "install.sh"
         shutil.copy2(ROOT / "deploy" / "install.sh", install_script)
         os.chmod(install_script, 0o755)
+        launcher_script = deploy_dir / "strom-agent-launcher.sh"
+        shutil.copy2(ROOT / "deploy" / "strom-agent-launcher.sh", launcher_script)
+        os.chmod(launcher_script, 0o755)
         shutil.copy2(ROOT / "deploy" / "strom-agent.service", deploy_dir / "strom-agent.service")
+        shutil.copy2(ROOT / "deploy" / "strom-update-check.service", deploy_dir / "strom-update-check.service")
+        shutil.copy2(ROOT / "deploy" / "strom-update-check.timer", deploy_dir / "strom-update-check.timer")
         shutil.copy2(ROOT / "deploy" / "99-strom-agent.rules", deploy_dir / "99-strom-agent.rules")
 
         archive_name = f"{AGENT_BIN}-{version}-{arch}.tar.gz"
@@ -178,8 +258,21 @@ def release_agent_artifacts(version: str) -> None:
 
         shutil.rmtree(stage_dir)
         checksums.append(f"{sha256_file(archive_path)}  {archive_name}")
+        manifest_artifacts.append(
+            release_manifest_artifact(
+                os_name=os_name,
+                arch=manifest_arch,
+                goarm=goarm,
+                filename=archive_name,
+                size=archive_path.stat().st_size,
+                sha256=sha256_file(archive_path),
+                binary_sha256=binary_sha256,
+            )
+        )
 
     (RELEASE_DIR / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8")
+    write_release_manifest(version, manifest_artifacts)
+
 
 
 def build_image(version: str, continue_build: bool) -> None:
@@ -454,8 +547,47 @@ def image_agent_multiarch(
 def release_agent(
     version: str = typer.Option(default_factory=default_version, help="Release version tag"),
 ) -> None:
-    """Build release tarballs and checksums for agent binaries."""
+    """Build release tarballs, checksums, and a signed-update manifest for agent binaries."""
     release_agent_artifacts(version)
+
+
+@release_app.command("sign-manifest")
+def release_sign_manifest_command(
+    private_key_env: str = typer.Option(
+        "STROM_RELEASE_SIGNING_KEY_PEM",
+        help="Name of the environment variable containing the Ed25519 private key PEM",
+    ),
+) -> None:
+    """Sign dist/release/strom-agent-manifest.json with the release signing key."""
+    private_key_pem = os.environ.get(private_key_env)
+    if not private_key_pem:
+        raise RuntimeError(f"environment variable {private_key_env} is not set")
+    signature_path = sign_release_manifest(private_key_pem)
+    typer.echo(f"wrote {signature_path}")
+
+
+@release_app.command("generate-signing-key")
+def release_generate_signing_key() -> None:
+    """Generate a new Ed25519 release-signing keypair.
+
+    The private key must be stored ONLY as the STROM_RELEASE_SIGNING_KEY_PEM
+    GitHub secret. The public key hex must be embedded as
+    defaultReleasePublicKeyHex in agent/internal/updates/checker.go.
+    """
+    private_key = Ed25519PrivateKey.generate()
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("ascii")
+    public_raw = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    typer.echo("Private key -- store ONLY as the STROM_RELEASE_SIGNING_KEY_PEM GitHub secret:")
+    typer.echo(private_pem)
+    typer.echo("Public key hex -- embed as defaultReleasePublicKeyHex in agent/internal/updates/checker.go:")
+    typer.echo(public_raw.hex())
 
 
 @release_app.command("next-version")

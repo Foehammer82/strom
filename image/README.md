@@ -37,6 +37,8 @@ That target:
 
 The target also writes `dist/strom-node-v0.1.0.img.xz.sha256`.
 
+`/usr/local/bin/strom-agent` on the built image is a small launcher script (`deploy/strom-agent-launcher.sh`), not the agent binary itself: it execs whichever release the node's update system has activated under `/var/lib/strom/agent/current`, falling back to a read-only recovery copy of the agent installed at `/usr/local/libexec/strom-agent-recovery` if no activated release is present or executable. This keeps the image bootable even if a later signed update is corrupted or fails to start.
+
 ## User Documentation
 
 The user-facing flow for building, flashing, and validating a node image now lives in the docs set:
