@@ -26,7 +26,7 @@ const (
 // generate-signing-key`, replace this constant with the printed public key,
 // store the private key ONLY as the STROM_RELEASE_SIGNING_KEY_PEM GitHub
 // Actions secret, and never commit the private key.
-const defaultReleasePublicKeyHex = "8c9c5a5f0227b453737c56bea808c6cf7328bea97d1b4e4be113fc6658fdc604"
+const defaultReleasePublicKeyHex = "c817e3496354034c5be88c77fe936e98daf4446dd493adcdd768ad4441753fe7"
 
 // DefaultReleasePublicKey returns the parsed default release public key.
 func DefaultReleasePublicKey() ed25519.PublicKey {
