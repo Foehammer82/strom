@@ -417,7 +417,7 @@ func TestIndexRendersHTMLDashboard(t *testing.T) {
 	body := recorder.Body.String()
 	for _, want := range []string{
 		"Strom Node",
-		"Refresh",
+		"health-stream-status",
 		"/assets/app.js",
 		"/assets/about.js",
 		"/assets/styles.css",

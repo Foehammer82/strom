@@ -373,6 +373,78 @@ select {
   padding: 16px;
 }
 
+.metric-card--interactive {
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.metric-card--interactive:hover,
+.metric-card--interactive:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent), var(--shadow-soft);
+}
+
+.metric-trend {
+  display: block;
+  width: 100%;
+  height: 26px;
+  margin-top: 10px;
+  opacity: 0.55;
+}
+
+.metric-trend polyline {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-hover-guide {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.chart-hover-guide[hidden] {
+  /* The UA stylesheet's `[hidden] { display: none }` rule doesn't reliably
+     apply inside inline SVG in every browser, so force it explicitly. */
+  display: none;
+}
+
+.chart-tooltip {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-soft);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.chart-tooltip[hidden] {
+  /* Same UA-stylesheet-vs-author-stylesheet gotcha as .chart-hover-guide
+     above: this rule's own `display: grid` beats the browser's default
+     `[hidden] { display: none }` UA rule, so it must be overridden
+     explicitly or toggling the `hidden` property/attribute has no visible
+     effect. */
+  display: none;
+}
+
+.chart-tooltip strong {
+  font-size: 0.86rem;
+}
+
+.chart-tooltip span {
+  color: var(--muted);
+}
+
 .eyebrow {
   display: inline-block;
   margin-bottom: 8px;
@@ -399,10 +471,6 @@ select {
   overflow-wrap: anywhere;
 }
 
-.helper--error {
-  color: var(--danger);
-}
-
 .section-head {
   display: flex;
   align-items: center;
@@ -416,45 +484,67 @@ select {
   flex-shrink: 0;
 }
 
-.refresh-indicator {
+.live-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0;
-  border: none;
-  background: none;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
   color: var(--muted);
-  font: inherit;
-  cursor: pointer;
 }
 
-.refresh-indicator:hover .refresh-ring-progress,
-.refresh-indicator:focus-visible .refresh-ring-progress {
-  stroke: var(--primary);
+.live-badge::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
 }
 
-.refresh-ring {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  transform: rotate(-90deg);
+.live-badge.is-live {
+  color: var(--good);
 }
 
-.refresh-ring-track {
-  fill: none;
-  stroke: var(--line);
-  stroke-width: 3;
+.live-badge.is-live::before {
+  background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent);
 }
 
-.refresh-ring-progress {
-  fill: none;
-  stroke: var(--primary);
-  stroke-width: 3;
-  stroke-linecap: round;
+.live-badge.is-reconnecting {
+  color: var(--warn);
 }
 
-.refresh-indicator.is-refreshing .refresh-ring {
-  opacity: 0.6;
+.live-badge.is-reconnecting::before {
+  background: var(--warn);
+}
+
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .section-head h2 {
@@ -937,19 +1027,6 @@ select {
   overflow-wrap: anywhere;
 }
 
-.footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.footer-links a {
-  color: var(--primary);
-  text-decoration: none;
-}
-
-.footer-link,
 .endpoint-link {
   display: inline-flex;
   align-items: center;
@@ -1013,6 +1090,122 @@ select {
   max-height: min(85vh, 900px);
   display: flex;
   flex-direction: column;
+}
+
+.metric-detail-card {
+  width: min(780px, 100%);
+}
+
+.metric-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.metric-detail-head h2 {
+  margin: 4px 0 0;
+}
+
+.metric-detail-window {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.metric-detail-window button.is-active {
+  background: var(--accent);
+  color: #fffaf2;
+  border-color: transparent;
+}
+
+.metric-detail-chart-wrap {
+  position: relative;
+  height: 220px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  /* Clip gridlines/data to the rounded corners: without this, a gridline
+     drawn all the way to the plot edge visually pokes past the curve of
+     the container's border-radius. */
+  overflow: hidden;
+}
+
+.metric-detail-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.metric-detail-svg polyline {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.metric-detail-grid line {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.metric-detail-axis {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.metric-detail-axis span {
+  position: absolute;
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.metric-detail-axis-y span {
+  left: 8px;
+  transform: translateY(-50%);
+}
+
+.metric-detail-axis-x span {
+  bottom: 6px;
+  transform: translateX(-50%);
+}
+
+.metric-detail-point {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--surface-strong);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.metric-detail-point[hidden] {
+  display: none;
+}
+
+.metric-detail-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  text-align: center;
+}
+
+.metric-detail-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 12px;
 }
 
 .raw-json-head {
@@ -1308,10 +1501,6 @@ select {
     width: 48px;
     justify-content: center;
     padding: 0;
-  }
-
-  #topbar-toolbar > .refresh-indicator {
-    display: none;
   }
 
   .profile-menu {

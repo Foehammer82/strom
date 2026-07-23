@@ -385,6 +385,7 @@ func run(ctx context.Context, logger *log.Logger, cfg config) error {
 			httpErr <- err
 		}
 	}()
+	go healthAPI.RunMetricsSampler(runCtx)
 
 	if reconcileAction == updates.ReconcileAwaitingHealth {
 		go confirmUpdateHealthy(runCtx, logger, updatesStore, version, listener.Addr().(*net.TCPAddr).Port)
@@ -770,6 +771,7 @@ func runDevUI(ctx context.Context, logger *log.Logger, cfg config) error {
 			httpErr <- err
 		}
 	}()
+	go service.RunMetricsSampler(ctx)
 
 	if logger != nil {
 		logger.Printf("dev UI mode serving on http://%s", listener.Addr().String())

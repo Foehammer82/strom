@@ -119,6 +119,8 @@ type Service struct {
 	upsMetadata   map[string]upsMetadata
 	cache         http.Handler
 	lastCPUSample cpuStatSample
+	history       *metricHistory
+	longHistory   *metricHistory
 }
 
 // cpuStatSample is a single reading of cumulative CPU jiffy counters (from
@@ -402,17 +404,10 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 			<div class="brand">
 				<img class="brand-mark" src="/assets/logo.svg" alt="Strom logo">
 				<div class="brand-copy">
-					<h1>Strom Node</h1>
+					<h1>Strom Node <span id="version-badge" class="version-badge">{{.Health.Version}}</span></h1>
 				</div>
 			</div>
 			<nav id="topbar-toolbar" class="toolbar" aria-label="Dashboard actions">
-				<button id="refresh-indicator" class="refresh-indicator" type="button" aria-label="Refresh dashboard now">
-					<svg class="refresh-ring" viewBox="0 0 36 36" aria-hidden="true">
-						<circle class="refresh-ring-track" cx="18" cy="18" r="15.5"></circle>
-						<circle id="refresh-ring-progress" class="refresh-ring-progress" cx="18" cy="18" r="15.5"></circle>
-					</svg>
-					<span id="refresh-countdown" class="helper" role="status">Loading live metrics&hellip;</span>
-				</button>
 				<button
 					id="topbar-menu-toggle"
 					class="button button--ghost menu-toggle"
@@ -458,26 +453,24 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 		<section class="surface hero">
 			<div class="section-head">
 				<h2>Node overview</h2>
-				<div class="footer-links">
-					<a class="footer-link" href="/status" target="_blank" rel="noreferrer"><span>Public status</span><svg class="external-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
-					<a class="footer-link" href="/status/details" target="_blank" rel="noreferrer"><span>Detailed JSON</span><svg class="external-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
-					<a class="footer-link" href="/healthz" target="_blank" rel="noreferrer"><span>Health payload</span><svg class="external-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-9 9M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
-				</div>
+				<span id="health-stream-status" class="live-badge" role="status" aria-live="polite">Connecting&hellip;</span>
 			</div>
 			<div id="metrics-grid" class="summary-grid">
-				<article class="metric-card"><span class="eyebrow">Version</span><div class="metric-value">{{.Health.Version}}</div></article>
 				<article class="metric-card"><span class="eyebrow">Uptime</span><div class="metric-value">{{.Health.UptimeSeconds}}s</div></article>
 				<article class="metric-card"><span class="eyebrow">Disk free</span><div class="metric-value">{{.Health.DiskFreeBytes}} B</div></article>
 				<article class="metric-card"><span class="eyebrow">CPU temp</span><div class="metric-value">{{formatTemp .Health.CPUTemperatureCelsius}}</div></article>
 				<article class="metric-card"><span class="eyebrow">CPU usage</span><div class="metric-value">{{formatPercent .Health.CPUUsagePercent}}</div></article>
 				<article class="metric-card"><span class="eyebrow">Memory used</span><div class="metric-value">{{.Health.MemoryUsedBytes}} / {{.Health.MemoryTotalBytes}} B</div></article>
-				<article class="metric-card"><span class="eyebrow">UPS count</span><div class="metric-value">{{len .Health.UPSes}}</div></article>
 			</div>
 		</section>
 
 		<section class="layout">
 			<div class="stack">
 				<section class="surface hero">
+					<div class="section-head">
+						<h2>UPS devices</h2>
+						<span id="ups-count-badge" class="count-badge">{{len .Health.UPSes}}</span>
+					</div>
 					<div id="ups-grid" class="ups-grid" aria-label="UPS inventory">
 						{{if .Health.UPSes}}
 							{{range .Health.UPSes}}
@@ -564,6 +557,41 @@ var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 			</form>
 		</div>
 	</div>
+	<div id="metric-detail-modal" class="modal" aria-hidden="true">
+		<div class="surface modal-card modal-card--wide metric-detail-card" role="dialog" aria-modal="true" aria-labelledby="metric-detail-title">
+			<div class="metric-detail-head">
+				<div>
+					<span class="eyebrow">Metric detail</span>
+					<h2 id="metric-detail-title">Metric</h2>
+				</div>
+				<div class="metric-detail-window" role="group" aria-label="Time window">
+					<button class="button button--ghost button--compact" type="button" data-metric-window="10m">10 min</button>
+					<button class="button button--ghost button--compact" type="button" data-metric-window="1h">1 hour</button>
+					<button class="button button--ghost button--compact" type="button" data-metric-window="6h">6 hours</button>
+					<button class="button button--ghost button--compact" type="button" data-metric-window="24h">24 hours</button>
+				</div>
+				<button id="metric-detail-close" class="button button--ghost" type="button">Close</button>
+			</div>
+			<div class="metric-detail-chart-wrap">
+				<svg id="metric-detail-svg" class="metric-detail-svg" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+					<g id="metric-detail-grid-y" class="metric-detail-grid"></g>
+					<g id="metric-detail-grid-x" class="metric-detail-grid"></g>
+					<polyline id="metric-detail-polyline"></polyline>
+					<line id="metric-detail-guide" class="chart-hover-guide" x1="0" y1="0" x2="0" y2="220" hidden></line>
+					<line id="metric-detail-guide-y" class="chart-hover-guide" x1="0" y1="0" x2="600" y2="0" hidden></line>
+				</svg>
+				<div id="metric-detail-axis-y" class="metric-detail-axis metric-detail-axis-y" aria-hidden="true"></div>
+				<div id="metric-detail-axis-x" class="metric-detail-axis metric-detail-axis-x" aria-hidden="true"></div>
+				<div id="metric-detail-point" class="metric-detail-point" hidden></div>
+				<p id="metric-detail-empty" class="helper" hidden>Not enough data yet for this window.</p>
+			</div>
+			<div class="metric-detail-footer">
+				<span id="metric-detail-summary" class="helper"></span>
+				<span id="metric-detail-range" class="helper"></span>
+			</div>
+		</div>
+	</div>
+	<div id="chart-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
 	<script src="/assets/app.js" defer></script>
 	<script src="/assets/about.js" defer></script>
 </body>
@@ -723,6 +751,8 @@ func New(logger *log.Logger, opts Options) *Service {
 		auth:            newAuthManager(opts.DisableAuth, opts.AuthPath, logger),
 		adopter:         opts.Adopter,
 		sshAccess:       opts.SSHAccess,
+		history:         newMetricHistory(historyCapacity),
+		longHistory:     newMetricHistory(longHistoryCapacity),
 	}
 	if service.sshAccess == nil {
 		service.sshAccess = newSystemSSHAccessManager(rootPath)
@@ -773,6 +803,8 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("/auth/reset", s.handleReset)
 	mux.HandleFunc("/api/about", s.handleAPIAbout)
 	mux.HandleFunc("/api/health", s.handleAPIHealth)
+	mux.HandleFunc("/api/health/stream", s.handleAPIHealthStream)
+	mux.HandleFunc("/api/health/history/long", s.handleAPIHealthHistoryLong)
 	mux.HandleFunc("/api/diagnostics", s.handleAPIDiagnostics)
 	mux.HandleFunc("/api/ups", s.handleAPIUPS)
 	mux.HandleFunc("/api/ups/", s.handleAPIUPS)
@@ -1783,6 +1815,120 @@ func (s *Service) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// handleAPIHealthHistoryLong returns the longer-retention (1 minute
+// resolution, up to 24h) metric history snapshot used by the metric detail
+// dialog's 1h/6h/24h window options. The default 10 minute window is served
+// entirely from the live SSE "history" event (see handleAPIHealthStream);
+// this endpoint is only fetched on demand when a wider window is selected,
+// so the payload isn't continuously streamed to clients that never open the
+// detail dialog.
+func (s *Service) handleAPIHealthHistoryLong(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.requireReadAccess(w, r) {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, s.longHistory.snapshot())
+}
+
+// handleAPIHealthStream serves a Server-Sent Events stream so the dashboard
+// can receive live health snapshots and trend history without polling.
+// On connect it sends the currently buffered trend history once, then
+// pushes a fresh "history" event every historySampleInterval and a fresh
+// "health" event every liveStreamInterval until the client disconnects.
+func (s *Service) handleAPIHealthStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.requireReadAccess(w, r) {
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSONError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	ctx := r.Context()
+	if err := writeSSEEvent(w, "history", s.history.snapshot()); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	// Send an immediate health event (node metrics + live UPS list/metrics)
+	// so the dashboard can paint everything from this one connection without
+	// falling back to a REST poll for first paint.
+	if !s.sendHealthEvent(ctx, w, flusher) {
+		return
+	}
+
+	historyTicker := time.NewTicker(historySampleInterval)
+	defer historyTicker.Stop()
+	liveTicker := time.NewTicker(liveStreamInterval)
+	defer liveTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-historyTicker.C:
+			if err := writeSSEEvent(w, "history", s.history.snapshot()); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-liveTicker.C:
+			if !s.sendHealthEvent(ctx, w, flusher) {
+				return
+			}
+		}
+	}
+}
+
+// sendHealthEvent builds and writes a single "health" SSE event (node
+// metrics + the live UPS list/metrics, see healthResponse.UPSes). Returns
+// false if the connection should be torn down (write failure); a build
+// failure is logged and treated as a no-op tick so a transient error (e.g. a
+// slow upsc call) doesn't kill the stream.
+func (s *Service) sendHealthEvent(ctx context.Context, w http.ResponseWriter, flusher http.Flusher) bool {
+	response, err := s.buildHealthResponse(ctx)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf("health stream: build health response: %v", err)
+		}
+		return true
+	}
+	if err := writeSSEEvent(w, "health", response); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
+}
+
+// writeSSEEvent writes a single named Server-Sent Events message with a
+// JSON-encoded payload.
+func writeSSEEvent(w http.ResponseWriter, event string, payload any) error {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, encoded); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) apiDocsEnabled(w http.ResponseWriter, r *http.Request) bool {
@@ -3268,4 +3414,13 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
+}
+
+// Flush implements http.Flusher by delegating to the wrapped
+// ResponseWriter, so handlers that stream responses (e.g. Server-Sent
+// Events) keep working when wrapped by loggingMiddleware.
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
